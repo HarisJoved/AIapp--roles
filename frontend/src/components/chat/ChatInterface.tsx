@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useKeycloak } from '../../contexts/KeycloakContext';
+import { useAuthContext } from '../../contexts/AuthContext';
 import { MessageSquare, Plus, History, AlertCircle, CheckCircle, Settings } from 'lucide-react';
 import ChatMessageComponent from './ChatMessage';
 import ChatInput, { ChatInputOptions } from './ChatInput';
@@ -16,7 +16,7 @@ interface ChatInterfaceProps {
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) => {
-  const { user, isAuthenticated } = useKeycloak();
+  const { userInfo } = useAuthContext();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [sessions, setSessions] = useState<ConversationInfo[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -43,12 +43,12 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) => {
 
   // Update userId when Keycloak user changes
   useEffect(() => {
-    if (isAuthenticated && user?.sub) {
-      setUserId(user.sub);
+    if (userInfo?.sub) {
+      setUserId(userInfo.sub);
     } else {
       setUserId(null);
     }
-  }, [isAuthenticated, user]);
+  }, [userInfo]);
 
   // Auto-scroll to bottom
   const scrollToBottom = () => {
@@ -98,14 +98,21 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ className = '' }) => {
   };
 
   const createNewSession = async () => {
-    if (!userId) return;
+    console.log('DEBUG: createNewSession called with userId:', userId);
+    if (!userId) {
+      console.log('DEBUG: No userId, returning early');
+      return;
+    }
     try {
+      console.log('DEBUG: Creating conversation with user_id:', userId);
       const session = await chatService.createConversation({ user_id: userId });
+      console.log('DEBUG: Conversation created successfully:', session);
       setCurrentSessionId(session.conversation_id);
       setMessages([]);
       await loadSessions();
       setShowSessions(false);
     } catch (error) {
+      console.error('DEBUG: Failed to create session:', error);
       setError('Failed to create new session');
       console.error('Failed to create session:', error);
     }

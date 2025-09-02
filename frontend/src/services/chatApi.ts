@@ -27,23 +27,11 @@ const chatApi = axios.create({
   },
 });
 
-// Import Keycloak service for token management
-let keycloakService: any = null;
-
-// Lazy import to avoid circular dependencies
-const getKeycloakService = async () => {
-  if (!keycloakService) {
-    const module = await import('./keycloakService');
-    keycloakService = module.keycloakService;
-  }
-  return keycloakService;
-};
-
-// Request interceptor to attach Keycloak token
+// Request interceptor to attach auth token
 chatApi.interceptors.request.use(async (config) => {
   try {
-    const service = await getKeycloakService();
-    const token = service.getToken();
+    // Get token from session storage (set by AuthContext)
+    const token = sessionStorage.getItem('authToken');
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -51,7 +39,7 @@ chatApi.interceptors.request.use(async (config) => {
       delete config.headers.Authorization;
     }
   } catch (error) {
-    console.warn('Failed to get Keycloak token:', error);
+    console.warn('Failed to get auth token:', error);
     delete config.headers.Authorization;
   }
   
@@ -78,8 +66,7 @@ export const chatService = {
   ): Promise<void> {
     try {
       const streamRequest = { ...request, stream: true };
-      const service = await getKeycloakService();
-      const token = service.getToken();
+      const token = sessionStorage.getItem('authToken');
       const response = await fetch(`${API_BASE_URL}/chat/`, {
         method: 'POST',
         headers: {

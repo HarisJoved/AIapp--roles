@@ -50,15 +50,6 @@ class Settings(BaseSettings):
     mongodb_db_name: str = Field(default="embedder", env="MONGODB_DB_NAME")
     chat_history_limit: int = Field(default=10, env="CHAT_HISTORY_LIMIT")
 
-    # Keycloak settings
-    keycloak_server_url: str = Field(default="https://auth.idtcities.com", env="KEYCLOAK_SERVER_URL")
-    keycloak_realm: str = Field(default="embedder", env="KEYCLOAK_REALM")
-    keycloak_client_id: str = Field(default="embedder-client", env="KEYCLOAK_CLIENT_ID")
-    keycloak_client_secret: str = Field(default="your_client_secret_here", env="KEYCLOAK_CLIENT_SECRET")
-    keycloak_admin_client_id: str = Field(default="admin-cli", env="KEYCLOAK_ADMIN_CLIENT_ID")
-    keycloak_admin_username: str = Field(default="admin", env="KEYCLOAK_ADMIN_USERNAME")
-    keycloak_admin_password: str = Field(default="admin", env="KEYCLOAK_ADMIN_PASSWORD")
-
     # API Keys (optional for development)
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     google_api_key: Optional[str] = Field(default=None, env="GOOGLE_API_KEY")

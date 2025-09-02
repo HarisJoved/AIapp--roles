@@ -21,12 +21,12 @@ import { configAPI, generalAPI } from './services/api';
 import { AppConfig, HealthStatus, DocumentUploadResponse } from './types/api';
 
 // Contexts
-import { KeycloakProvider, useKeycloak } from './contexts/KeycloakContext';
+import { AuthProvider, useAuthContext } from './contexts/AuthContext';
 
 // Layout Components
 const Sidebar: React.FC = () => {
   const location = useLocation();
-  const { isAuthenticated, user, logout } = useKeycloak();
+  const { isLogin, userInfo, logout } = useAuthContext();
   
   const isActive = (path: string) => location.pathname === path;
   
@@ -50,7 +50,7 @@ const Sidebar: React.FC = () => {
       <div className="p-6">
         <h1 className="text-xl font-bold text-gray-900">Document Embedder</h1>
         <p className="text-sm text-gray-600 mt-1">AI-Powered Document Platform</p>
-        {isAuthenticated && user && (
+        {isLogin && userInfo && (
           <div className="mt-3 p-2 bg-gray-50 rounded-md">
             {/* <p className="text-xs text-gray-600">Signed in as:</p>
             <p className="text-sm font-medium text-gray-900 truncate">
@@ -92,7 +92,7 @@ const Sidebar: React.FC = () => {
         </Link>
 
         <div className="pt-4 border-t mt-4">
-          {!isAuthenticated ? (
+          {!isLogin ? (
             <>
               <Link to="/login" className={linkClass('/login')}>
                 <span>Login</span>
@@ -165,18 +165,9 @@ const ChatPage: React.FC = () => (
 );
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
-  const { isAuthenticated, isLoading } = useKeycloak();
+  const { isLogin } = useAuthContext();
   
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading...</span>
-      </div>
-    );
-  }
-  
-  if (!isAuthenticated) {
+  if (!isLogin) {
     return <Navigate to="/login" replace />;
   }
   
@@ -427,11 +418,11 @@ const AppLayout: React.FC = () => {
 // Main App Component
 const App: React.FC = () => {
   return (
-    <KeycloakProvider>
+    <AuthProvider>
       <Router>
         <AppLayout />
       </Router>
-    </KeycloakProvider>
+    </AuthProvider>
   );
 };
 

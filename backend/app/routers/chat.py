@@ -26,7 +26,8 @@ from app.models.chat import (
 from app.models.config import ChatModelConfig
 from app.services.hybrid_rag_service import HybridRAGService
 from app.core.chat_models.base import ChatMessage
-from app.auth.keycloak import get_current_user, KeycloakUser
+from app.services.auth_service import get_current_user
+from app.models.auth import User as KeycloakUser
 from app.core.session.session_manager import SessionManager, FileSessionStorage, InMemorySessionStorage
 from app.config.settings import config_manager, settings
 from app.services.mongo_chat_store import get_mongo_store

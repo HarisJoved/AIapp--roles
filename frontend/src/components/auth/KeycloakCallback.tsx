@@ -1,33 +1,35 @@
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useKeycloak } from '../../contexts/KeycloakContext';
+import { useAuthContext } from '../../contexts/AuthContext';
 
 const KeycloakCallback: React.FC = () => {
+  const { isLogin } = useAuthContext();
   const navigate = useNavigate();
-  const { isAuthenticated, isLoading } = useKeycloak();
 
   useEffect(() => {
-    if (!isLoading) {
-      if (isAuthenticated) {
-        navigate('/');
-      } else {
-        navigate('/login');
-      }
+    // If authenticated, redirect to home
+    if (isLogin) {
+      navigate('/');
     }
-  }, [isAuthenticated, isLoading, navigate]);
+  }, [isLogin, navigate]);
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Processing authentication...</p>
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
+      <div className="sm:mx-auto sm:w-full sm:max-w-md">
+        <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <h2 className="mt-4 text-lg font-medium text-gray-900">
+              Processing Authentication
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              Please wait while we complete your sign-in...
+            </p>
+          </div>
         </div>
       </div>
-    );
-  }
-
-  return null;
+    </div>
+  );
 };
 
 export default KeycloakCallback;

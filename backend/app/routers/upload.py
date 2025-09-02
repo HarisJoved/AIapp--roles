@@ -8,7 +8,8 @@ from app.models.document import DocumentType, DocumentUploadResponse, DocumentPr
 from app.models.search import SearchRequest, SearchResponse
 from app.services.document_service import document_service
 from app.config.settings import settings
-from app.auth.keycloak import get_current_user, KeycloakUser
+from app.services.auth_service import get_current_user
+from app.models.auth import User as KeycloakUser
 
 
 router = APIRouter(prefix="/upload", tags=["upload"])

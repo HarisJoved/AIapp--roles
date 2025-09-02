@@ -18,31 +18,11 @@ const api = axios.create({
   timeout: 30000,
 });
 
-// Import Keycloak service for token management
-let keycloakService: any = null;
-
-// Lazy import to avoid circular dependencies
-const getKeycloakService = async () => {
-  if (!keycloakService) {
-    const module = await import('./keycloakService');
-    keycloakService = module.keycloakService;
-  }
-  return keycloakService;
-};
-
-// Request interceptor to attach Keycloak token
+// Request interceptor to attach auth token
 api.interceptors.request.use(async (config) => {
   try {
-    const service = await getKeycloakService();
-    const token = service.getToken();
-    const isAuthenticated = service.isAuthenticated();
-    
-    console.log('API Request Debug:', {
-      url: config.url,
-      isAuthenticated,
-      hasToken: !!token,
-      tokenLength: token?.length || 0
-    });
+    // Get token from session storage (set by AuthContext)
+    const token = sessionStorage.getItem('authToken');
     
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -52,7 +32,7 @@ api.interceptors.request.use(async (config) => {
       console.warn('No token available for request');
     }
   } catch (error) {
-    console.warn('Failed to get Keycloak token:', error);
+    console.warn('Failed to get auth token:', error);
     delete config.headers.Authorization;
   }
   
@@ -70,17 +50,12 @@ api.interceptors.response.use(
       originalRequest._retry = true;
       
       try {
-        const service = await getKeycloakService();
-        const refreshed = await service.updateToken();
-        
-        if (refreshed) {
-          const token = service.getToken();
-          originalRequest.headers.Authorization = `Bearer ${token}`;
-          return api(originalRequest);
-        }
+        // For now, just redirect to login on 401
+        // You can implement token refresh logic here if needed
+        console.warn('Token expired, redirecting to login');
+        window.location.href = '/login';
       } catch (refreshError) {
         console.error('Token refresh failed:', refreshError);
-        // Redirect to login will be handled by Keycloak context
       }
     }
     

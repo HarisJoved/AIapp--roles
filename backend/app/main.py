@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.config.settings import settings, config_manager
 from app.services.factory import service_factory
 from app.services.document_service import document_service
-from app.routers import upload, config, chat, auth
+from app.routers import upload, config, chat
 
 
 @asynccontextmanager
@@ -16,14 +16,6 @@ async def lifespan(app: FastAPI):
     """Application lifespan manager"""
     # Startup
     print("Starting Document Embedding Platform...")
-    
-    # Initialize Keycloak authentication
-    try:
-        from app.auth.keycloak import init_keycloak_auth
-        init_keycloak_auth()
-        print("Keycloak authentication initialized")
-    except Exception as e:
-        print(f"Failed to initialize Keycloak auth: {e}")
     
     # Load existing configuration
     await config_manager.load_config()
@@ -72,7 +64,6 @@ app.add_middleware(
 app.include_router(upload.router)
 app.include_router(config.router)
 app.include_router(chat.router)
-app.include_router(auth.router)
 
 
 @app.get("/")

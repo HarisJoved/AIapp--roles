@@ -3,18 +3,18 @@
  */
 import React, { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useKeycloak } from '../../contexts/KeycloakContext';
+import { useAuthContext } from '../../contexts/AuthContext';
 
 const LoginPage: React.FC = () => {
-  const { login, isAuthenticated, isLoading } = useKeycloak();
+  const { login, isLogin } = useAuthContext();
   const navigate = useNavigate();
 
   useEffect(() => {
     // If already authenticated, redirect to home
-    if (isAuthenticated) {
+    if (isLogin) {
       navigate('/');
     }
-  }, [isAuthenticated, navigate]);
+  }, [isLogin, navigate]);
 
   const handleLogin = async () => {
     try {
@@ -23,28 +23,6 @@ const LoginPage: React.FC = () => {
       console.error('Login failed:', error);
     }
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
-        <div className="sm:mx-auto sm:w-full sm:max-w-md">
-          <div className="bg-white py-8 px-4 shadow sm:rounded-lg sm:px-10">
-            <div className="flex justify-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            </div>
-            <div className="mt-4 text-center">
-              <h2 className="text-lg font-medium text-gray-900">
-                Loading...
-              </h2>
-              <p className="mt-2 text-sm text-gray-600">
-                Please wait while we initialize the authentication system.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
