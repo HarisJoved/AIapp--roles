@@ -6,15 +6,15 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../contexts/AuthContext';
 
 const LoginPage: React.FC = () => {
-  const { login, isLogin } = useAuthContext();
+  const { login, isLogin, isLoading } = useAuthContext();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // If already authenticated, redirect to home
-    if (isLogin) {
+    // If already authenticated and not loading, redirect to home
+    if (!isLoading && isLogin) {
       navigate('/');
     }
-  }, [isLogin, navigate]);
+  }, [isLogin, isLoading, navigate]);
 
   const handleLogin = async () => {
     try {

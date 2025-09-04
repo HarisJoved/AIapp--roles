@@ -25,6 +25,7 @@ interface KeycloakTokenParsed {
 // Types for Auth Context
 interface AuthContextType {
   isLogin: boolean;
+  isLoading: boolean;
   token: string | null;
   userInfo: KeycloakTokenParsed | undefined;
   roles: string[];
@@ -42,10 +43,11 @@ interface AuthProviderProps {
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [isLogin, setIsLogin] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
   const [userInfo, setUserInfo] = useState<KeycloakTokenParsed>();
   const [roles, setRoles] = useState<string[]>([]);
-  const CLIENT_ID = "idtcities";
+  const CLIENT_ID = "embedder-client";
   
   // Use ref to track initialization state
   const initialized = useRef(false);
@@ -64,45 +66,77 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const initKeycloak = async () => {
       try {
-        // Check if already initialized
-        if (keycloak.authenticated !== undefined) {
+        // Check if already initialized and authenticated
+        if (keycloak.authenticated === true && keycloak.token) {
           initialized.current = true;
-          setIsLogin(!!keycloak.authenticated);
-          if (keycloak.authenticated) {
-            setToken(keycloak.token ?? null);
-            if (keycloak.token) {
-              sessionStorage.setItem("authToken", keycloak.token);
-            }
-            setUserInfo(keycloak.tokenParsed as KeycloakTokenParsed);
-            setRoles(
-              (keycloak.tokenParsed as KeycloakTokenParsed)?.resource_access?.[CLIENT_ID]?.roles || []
-            );
-            handleTokenExpiration();
-          }
+          setIsLoading(false);
+          setIsLogin(true);
+          setToken(keycloak.token);
+          localStorage.setItem("authToken", keycloak.token);
+          setUserInfo(keycloak.tokenParsed as KeycloakTokenParsed);
+          setRoles(
+            (keycloak.tokenParsed as KeycloakTokenParsed)?.resource_access?.[CLIENT_ID]?.roles || []
+          );
+          handleTokenExpiration();
           return;
         }
 
-        // Create initialization promise
+        // Check for stored token as fallback
+        const storedToken = localStorage.getItem("authToken");
+        if (storedToken && !keycloak.authenticated) {
+          // Try to restore session with stored token
+          try {
+            // Validate if token is still valid by attempting to parse it
+            const tokenParts = storedToken.split('.');
+            if (tokenParts.length === 3) {
+              const payload = JSON.parse(atob(tokenParts[1]));
+              const currentTime = Math.floor(Date.now() / 1000);
+
+              if (payload.exp && payload.exp > currentTime) {
+                // Token is still valid, set it manually
+                keycloak.token = storedToken;
+                keycloak.tokenParsed = payload;
+                initialized.current = true;
+                setIsLoading(false);
+                setIsLogin(true);
+                setToken(storedToken);
+                setUserInfo(payload as KeycloakTokenParsed);
+                setRoles(
+                  (payload as KeycloakTokenParsed)?.resource_access?.[CLIENT_ID]?.roles || []
+                );
+                handleTokenExpiration();
+                return;
+              } else {
+                // Token expired, remove it
+                localStorage.removeItem("authToken");
+              }
+            }
+          } catch (error) {
+            console.warn("Failed to restore session from stored token:", error);
+            localStorage.removeItem("authToken");
+          }
+        }
+
+        // Create initialization promise with improved configuration
         initPromise.current = keycloak.init({
           onLoad: "check-sso",
           checkLoginIframe: false,
-          silentCheckSsoRedirectUri: "http://localhost:8880/silent-check-sso.html",
+          silentCheckSsoRedirectUri: window.location.origin + "/silent-check-sso.html",
           pkceMethod: "S256",
+          enableLogging: false, // Disable verbose logging in production
         });
 
         const authenticated = await initPromise.current;
-        
+
         initialized.current = true;
+        setIsLoading(false);
         setIsLogin(!!authenticated);
-        
+
         console.log('DEBUG: Keycloak initialized, authenticated:', authenticated);
-        console.log('DEBUG: keycloak.tokenParsed:', keycloak.tokenParsed);
-        
-        if (authenticated) {
-          setToken(keycloak.token ?? null);
-          if (keycloak.token) {
-            sessionStorage.setItem("authToken", keycloak.token);
-          }
+
+        if (authenticated && keycloak.token) {
+          setToken(keycloak.token);
+          localStorage.setItem("authToken", keycloak.token);
           const parsedToken = keycloak.tokenParsed as KeycloakTokenParsed;
           console.log('DEBUG: Setting userInfo to:', parsedToken);
           setUserInfo(parsedToken);
@@ -110,10 +144,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             parsedToken?.resource_access?.[CLIENT_ID]?.roles || []
           );
           handleTokenExpiration();
+        } else {
+          // Clear any stale data if not authenticated
+          localStorage.removeItem("authToken");
         }
       } catch (error: any) {
         console.error("Keycloak initialization failed", error);
+        setIsLoading(false);
         setIsLogin(false);
+        localStorage.removeItem("authToken");
         initialized.current = true;
       } finally {
         initPromise.current = null;
@@ -138,7 +177,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           if (refreshed) {
             setToken(keycloak.token ?? null);
             if (keycloak.token) {
-              sessionStorage.setItem("authToken", keycloak.token);
+              localStorage.setItem("authToken", keycloak.token);
             }
             setUserInfo(keycloak.tokenParsed as KeycloakTokenParsed);
             setRoles(
@@ -159,12 +198,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const login = () => keycloak.login({ redirectUri: window.location.href });
 
   const logout = () => {
-    sessionStorage.removeItem("authToken");
+    localStorage.removeItem("authToken");
     keycloak.logout();
   };
 
   return (
-    <AuthContext.Provider value={{ isLogin, token, userInfo, roles, login, logout }}>
+    <AuthContext.Provider value={{ isLogin, isLoading, token, userInfo, roles, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

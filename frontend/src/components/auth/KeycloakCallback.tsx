@@ -3,15 +3,15 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthContext } from '../../contexts/AuthContext';
 
 const KeycloakCallback: React.FC = () => {
-  const { isLogin } = useAuthContext();
+  const { isLogin, isLoading } = useAuthContext();
   const navigate = useNavigate();
 
   useEffect(() => {
-    // If authenticated, redirect to home
-    if (isLogin) {
+    // If authenticated and not loading, redirect to home
+    if (!isLoading && isLogin) {
       navigate('/');
     }
-  }, [isLogin, navigate]);
+  }, [isLogin, isLoading, navigate]);
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">

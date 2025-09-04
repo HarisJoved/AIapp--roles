@@ -21,9 +21,9 @@ const api = axios.create({
 // Request interceptor to attach auth token
 api.interceptors.request.use(async (config) => {
   try {
-    // Get token from session storage (set by AuthContext)
-    const token = sessionStorage.getItem('authToken');
-    
+    // Get token from localStorage (set by AuthContext)
+    const token = localStorage.getItem('authToken');
+
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
       console.log('Authorization header added to request');
@@ -35,7 +35,7 @@ api.interceptors.request.use(async (config) => {
     console.warn('Failed to get auth token:', error);
     delete config.headers.Authorization;
   }
-  
+
   return config;
 });
 
