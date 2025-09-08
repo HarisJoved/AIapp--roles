@@ -170,10 +170,12 @@ settings.json
 uploads/
 temp_files/
 
-# Model cache directories
-models/
+# Model cache directories (but not the actual model files)
+*.bin
+*.safetensors
 .cache/
 transformers_cache/
+huggingface_cache/
 
 # Vector database data directories
 chroma_db/
