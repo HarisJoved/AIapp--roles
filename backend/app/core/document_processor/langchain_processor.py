@@ -86,13 +86,16 @@ class LangChainDocumentProcessor(BaseDocumentProcessor):
         
         return cleaned_text.strip()
     
-    def split_text(self, text: str, metadata: Dict[str, Any] = None) -> List[DocumentChunk]:
+    def split_text(self, text: str, metadata: Dict[str, Any] = None, user_id: str = None) -> List[DocumentChunk]:
         """Split text into chunks using LangChain text splitter"""
         if not text:
             return []
         
         if metadata is None:
             metadata = {}
+        
+        if user_id is None:
+            raise ValueError("user_id is required for document chunks")
         
         # Split text into chunks
         text_chunks = self.text_splitter.split_text(text)
@@ -110,7 +113,8 @@ class LangChainDocumentProcessor(BaseDocumentProcessor):
             chunk = DocumentChunk(
                 id=str(uuid.uuid4()),
                 content=chunk_text,
-                metadata=chunk_metadata
+                metadata=chunk_metadata,
+                user_id=user_id
             )
             chunks.append(chunk)
         

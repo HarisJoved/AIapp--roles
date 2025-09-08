@@ -28,6 +28,7 @@ class DocumentChunk(BaseModel):
     content: str = Field(..., description="Chunk text content")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
     embedding: Optional[List[float]] = Field(None, description="Vector embedding")
+    user_id: str = Field(..., description="ID of the user who owns this chunk")
     
     
 class Document(BaseModel):
@@ -38,6 +39,7 @@ class Document(BaseModel):
     chunks: List[DocumentChunk] = Field(default_factory=list, description="Document chunks")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
     status: DocumentStatus = Field(default=DocumentStatus.UPLOADED, description="Processing status")
+    user_id: str = Field(..., description="ID of the user who uploaded the document")
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     processed_at: Optional[datetime] = Field(None, description="Processing completion timestamp")
     error_message: Optional[str] = Field(None, description="Error message if processing failed")

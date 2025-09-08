@@ -354,11 +354,17 @@ Answer:""")
                 # Get conversation memory
                 memory = self._get_memory(session_id)
                 
-                # Debug: Test direct retrieval
+                # Debug: Test direct retrieval with user filtering
                 try:
-                    retriever = self.vectorstore.as_retriever(search_kwargs={"k": 3})
+                    # Create retriever with user filtering if user_id is provided
+                    search_kwargs = {"k": 3}
+                    if user_id:
+                        # Add user_id filter to search kwargs
+                        search_kwargs["filter"] = {"user_id": user_id}
+                    
+                    retriever = self.vectorstore.as_retriever(search_kwargs=search_kwargs)
                     docs = await asyncio.to_thread(retriever.get_relevant_documents, message)
-                    print(f"🔍 Direct retrieval found {len(docs)} documents")
+                    print(f"🔍 Direct retrieval found {len(docs)} documents for user {user_id}")
                     for i, doc in enumerate(docs):
                         print(f"  Doc {i}: {doc.page_content[:100]}...")
                 except Exception as e:
@@ -366,14 +372,57 @@ Answer:""")
                 
                 # Determine chat history source
                 chat_history = chat_history_override if chat_history_override is not None else memory.chat_memory.messages
-                # Run the retrieval QA chain
-                result = await asyncio.to_thread(
-                    self.retrieval_qa,
-                    {
-                        "question": message,
-                        "chat_history": chat_history,
-                    }
-                )
+                
+                # Create a new retriever with user filtering if needed
+                if user_id:
+                    # Create a new retriever with user filtering
+                    search_kwargs = {"k": self.retrieval_config["top_k"]}
+                    search_kwargs["filter"] = {"user_id": user_id}
+                    user_retriever = self.vectorstore.as_retriever(search_kwargs=search_kwargs)
+                    
+                    # Create a new RAG chain with user-filtered retriever
+                    from langchain.chains import ConversationalRetrievalChain
+                    from langchain.prompts import PromptTemplate
+                    
+                    rag_prompt = PromptTemplate.from_template("""
+You are a helpful AI assistant. Use the following context from documents to answer the user's question.
+If you don't know the answer based on the context, just say so.
+ 
+Context:
+{context}
+ 
+Conversation History:
+{chat_history}
+ 
+Question: {question}
+ 
+Answer:""")
+                    
+                    user_retrieval_qa = ConversationalRetrievalChain.from_llm(
+                        llm=self.chat_model,
+                        retriever=user_retriever,
+                        combine_docs_chain_kwargs={"prompt": rag_prompt},
+                        return_source_documents=True,
+                        verbose=True
+                    )
+                    
+                    # Run the retrieval QA chain with user filtering
+                    result = await asyncio.to_thread(
+                        user_retrieval_qa,
+                        {
+                            "question": message,
+                            "chat_history": chat_history,
+                        }
+                    )
+                else:
+                    # Run the retrieval QA chain without filtering
+                    result = await asyncio.to_thread(
+                        self.retrieval_qa,
+                        {
+                            "question": message,
+                            "chat_history": chat_history,
+                        }
+                    )
                 
                 retrieval_end = datetime.utcnow()
                 retrieval_time = (retrieval_end - retrieval_start).total_seconds()

@@ -104,7 +104,8 @@ class QdrantDBClient(BaseVectorDBClient):
                         vector=chunk.embedding,
                         payload={
                             **chunk.metadata,
-                            "content": chunk.content
+                            "content": chunk.content,
+                            "user_id": chunk.user_id
                         }
                     )
                     points.append(point)
@@ -124,7 +125,8 @@ class QdrantDBClient(BaseVectorDBClient):
         query_vector: List[float], 
         top_k: int = 5, 
         threshold: float = 0.0,
-        filter_metadata: Optional[Dict[str, Any]] = None
+        filter_metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> List[SearchResult]:
         """Search for similar vectors in Qdrant"""
         try:
@@ -133,9 +135,15 @@ class QdrantDBClient(BaseVectorDBClient):
             
             # Prepare filter if provided
             query_filter = None
+            filter_conditions = {}
             if filter_metadata:
+                filter_conditions.update(filter_metadata)
+            if user_id:
+                filter_conditions["user_id"] = user_id
+            
+            if filter_conditions:
                 conditions = []
-                for key, value in filter_metadata.items():
+                for key, value in filter_conditions.items():
                     conditions.append(
                         FieldCondition(key=key, match=MatchValue(value=value))
                     )

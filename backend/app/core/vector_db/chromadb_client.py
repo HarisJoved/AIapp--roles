@@ -113,7 +113,12 @@ class ChromaDBClient(BaseVectorDBClient):
                 if chunk.embedding:
                     ids.append(chunk.id)
                     embeddings.append(chunk.embedding)
-                    metadatas.append(chunk.metadata)
+                    # Include user_id in metadata for filtering
+                    chunk_metadata = {
+                        **chunk.metadata,
+                        "user_id": chunk.user_id
+                    }
+                    metadatas.append(chunk_metadata)
                     documents.append(chunk.content)
             
             if ids:
@@ -134,19 +139,25 @@ class ChromaDBClient(BaseVectorDBClient):
         query_vector: List[float], 
         top_k: int = 5, 
         threshold: float = 0.0,
-        filter_metadata: Optional[Dict[str, Any]] = None
+        filter_metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> List[SearchResult]:
         """Search for similar vectors in ChromaDB"""
         try:
             if not self.collection:
                 await self.initialize()
             
+            # Build where clause for filtering
+            where_clause = filter_metadata or {}
+            if user_id:
+                where_clause["user_id"] = user_id
+            
             # Perform search (run in thread to avoid blocking event loop)
             results = await asyncio.to_thread(
                 self.collection.query,
                 query_embeddings=[query_vector],
                 n_results=top_k,
-                where=filter_metadata,
+                where=where_clause,
                 include=["metadatas", "documents", "distances"]
             )
             

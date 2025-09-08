@@ -42,7 +42,8 @@ class BaseVectorDBClient(ABC):
         query_vector: List[float], 
         top_k: int = 5, 
         threshold: float = 0.0,
-        filter_metadata: Optional[Dict[str, Any]] = None
+        filter_metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> List[SearchResult]:
         """Search for similar vectors"""
         pass
@@ -62,7 +63,8 @@ class BaseVectorDBClient(ABC):
         query_embedding: List[float], 
         top_k: int = 5, 
         similarity_threshold: float = 0.0,
-        filter_metadata: Optional[Dict[str, Any]] = None
+        filter_metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Search for similar vectors (RAG-compatible interface)
@@ -77,7 +79,8 @@ class BaseVectorDBClient(ABC):
                 query_vector=query_embedding,
                 top_k=top_k,
                 threshold=similarity_threshold,
-                filter_metadata=filter_metadata
+                filter_metadata=filter_metadata,
+                user_id=user_id
             )
             
             # Convert SearchResult objects to dictionaries for RAG compatibility

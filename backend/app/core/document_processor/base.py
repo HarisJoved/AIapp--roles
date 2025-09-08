@@ -23,7 +23,7 @@ class BaseDocumentProcessor(ABC):
         pass
     
     @abstractmethod
-    def split_text(self, text: str, metadata: Dict[str, Any] = None) -> List[DocumentChunk]:
+    def split_text(self, text: str, metadata: Dict[str, Any] = None, user_id: str = None) -> List[DocumentChunk]:
         """Split text into chunks with metadata"""
         pass
     
@@ -54,7 +54,7 @@ class BaseDocumentProcessor(ABC):
             }
             
             # Split into chunks
-            chunks = self.split_text(cleaned_text, metadata)
+            chunks = self.split_text(cleaned_text, metadata, document.user_id)
             
             # Update document
             document.content = cleaned_text

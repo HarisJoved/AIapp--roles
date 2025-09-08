@@ -32,14 +32,15 @@ class DocumentService:
         else:
             self.document_processor = LangChainDocumentProcessor()
     
-    async def create_document(self, filename: str, file_type: DocumentType) -> Document:
+    async def create_document(self, filename: str, file_type: DocumentType, user_id: str) -> Document:
         """Create a new document record"""
         document_id = str(uuid.uuid4())
         document = Document(
             id=document_id,
             filename=filename,
             file_type=file_type,
-            status=DocumentStatus.UPLOADED
+            status=DocumentStatus.UPLOADED,
+            user_id=user_id
         )
         self.documents[document_id] = document
         return document
@@ -154,7 +155,7 @@ class DocumentService:
         except Exception as e:
             raise e
     
-    async def search_documents(self, request: SearchRequest) -> SearchResponse:
+    async def search_documents(self, request: SearchRequest, user_id: str) -> SearchResponse:
         """Search for similar documents"""
         start_time = asyncio.get_event_loop().time()
         
@@ -173,7 +174,8 @@ class DocumentService:
                 query_vector=query_embedding,
                 top_k=request.top_k,
                 threshold=request.threshold,
-                filter_metadata=request.filter_metadata
+                filter_metadata=request.filter_metadata,
+                user_id=user_id
             )
             
             execution_time = asyncio.get_event_loop().time() - start_time
@@ -188,13 +190,16 @@ class DocumentService:
         except Exception as e:
             raise RuntimeError(f"Failed to search documents: {str(e)}")
     
-    def get_document(self, document_id: str) -> Optional[Document]:
-        """Get document by ID"""
-        return self.documents.get(document_id)
-    
-    def get_document_status(self, document_id: str) -> Optional[DocumentProcessingStatus]:
-        """Get document processing status"""
+    def get_document(self, document_id: str, user_id: str = None) -> Optional[Document]:
+        """Get document by ID, optionally filtered by user"""
         document = self.documents.get(document_id)
+        if document and user_id and document.user_id != user_id:
+            return None
+        return document
+    
+    def get_document_status(self, document_id: str, user_id: str = None) -> Optional[DocumentProcessingStatus]:
+        """Get document processing status"""
+        document = self.get_document(document_id, user_id)
         if not document:
             return None
         
@@ -221,14 +226,16 @@ class DocumentService:
             progress_percentage=progress
         )
     
-    def list_documents(self) -> List[Document]:
-        """List all documents"""
+    def list_documents(self, user_id: str = None) -> List[Document]:
+        """List documents, optionally filtered by user"""
+        if user_id:
+            return [doc for doc in self.documents.values() if doc.user_id == user_id]
         return list(self.documents.values())
     
-    async def delete_document(self, document_id: str) -> bool:
+    async def delete_document(self, document_id: str, user_id: str = None) -> bool:
         """Delete document and its vectors"""
         try:
-            document = self.documents.get(document_id)
+            document = self.get_document(document_id, user_id)
             if not document:
                 return False
             

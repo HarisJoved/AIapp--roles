@@ -100,7 +100,8 @@ class PineconeClient(BaseVectorDBClient):
                         "values": chunk.embedding,
                         "metadata": {
                             **chunk.metadata,
-                            "content": chunk.content[:1000]  # Limit content size
+                            "content": chunk.content[:1000],  # Limit content size
+                            "user_id": chunk.user_id
                         }
                     })
             
@@ -116,12 +117,18 @@ class PineconeClient(BaseVectorDBClient):
         query_vector: List[float], 
         top_k: int = 5, 
         threshold: float = 0.0,
-        filter_metadata: Optional[Dict[str, Any]] = None
+        filter_metadata: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None
     ) -> List[SearchResult]:
         """Search for similar vectors in Pinecone"""
         try:
             if not self.index:
                 await self.initialize()
+            
+            # Build filter for user_id
+            search_filter = filter_metadata or {}
+            if user_id:
+                search_filter["user_id"] = user_id
             
             # Perform search (run in thread to avoid blocking event loop)
             results = await asyncio.to_thread(
@@ -129,7 +136,7 @@ class PineconeClient(BaseVectorDBClient):
                 vector=query_vector,
                 top_k=top_k,
                 include_metadata=True,
-                filter=filter_metadata
+                filter=search_filter
             )
             
             # Convert to SearchResult objects

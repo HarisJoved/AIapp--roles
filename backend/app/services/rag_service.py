@@ -114,7 +114,7 @@ class RAGService:
         
         if use_rag and self.embedder and self.vector_db:
             retrieval_start = datetime.utcnow()
-            retrieved_chunks = await self._retrieve_relevant_chunks(message)
+            retrieved_chunks = await self._retrieve_relevant_chunks(message, user_id)
             retrieval_end = datetime.utcnow()
             retrieval_time = (retrieval_end - retrieval_start).total_seconds()
             
@@ -199,7 +199,7 @@ class RAGService:
         # Retrieve relevant documents if RAG is enabled
         context = None
         if use_rag and self.embedder and self.vector_db:
-            retrieved_chunks = await self._retrieve_relevant_chunks(message)
+            retrieved_chunks = await self._retrieve_relevant_chunks(message, user_id)
             if retrieved_chunks:
                 context = self._format_context(retrieved_chunks)
         
@@ -232,7 +232,7 @@ class RAGService:
         # Save updated session
         await self.session_manager.save_session(session)
     
-    async def _retrieve_relevant_chunks(self, query: str) -> List[Dict[str, Any]]:
+    async def _retrieve_relevant_chunks(self, query: str, user_id: str = None) -> List[Dict[str, Any]]:
         """Retrieve relevant document chunks for the query"""
         try:
             # Generate query embedding
@@ -242,7 +242,8 @@ class RAGService:
             search_results = await self.vector_db.search(
                 query_embedding=query_embedding,
                 top_k=self.retrieval_config["top_k"],
-                similarity_threshold=self.retrieval_config["similarity_threshold"]
+                similarity_threshold=self.retrieval_config["similarity_threshold"],
+                user_id=user_id
             )
             
             return search_results

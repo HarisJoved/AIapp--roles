@@ -64,7 +64,7 @@ async def upload_document(
         file_type = get_document_type(file.filename)
         
         # Create document record
-        document = await document_service.create_document(file.filename, file_type)
+        document = await document_service.create_document(file.filename, file_type, current_user.user_id)
         
         # Start background processing
         background_tasks.add_task(process_document_background, document.id, file_content)
@@ -85,7 +85,7 @@ async def upload_document(
 async def get_document_status(document_id: str, current_user: KeycloakUser = Depends(get_current_user)):
     """Get document processing status"""
     try:
-        status = document_service.get_document_status(document_id)
+        status = document_service.get_document_status(document_id, current_user.user_id)
         if not status:
             raise HTTPException(status_code=404, detail="Document not found")
         
@@ -99,9 +99,9 @@ async def get_document_status(document_id: str, current_user: KeycloakUser = Dep
 
 @router.get("/list")
 async def list_documents(current_user: KeycloakUser = Depends(get_current_user)):
-    """List all documents"""
+    """List user's documents"""
     try:
-        documents = document_service.list_documents()
+        documents = document_service.list_documents(current_user.user_id)
         return {
             "documents": [
                 {
@@ -127,7 +127,7 @@ async def list_documents(current_user: KeycloakUser = Depends(get_current_user))
 async def delete_document(document_id: str, current_user: KeycloakUser = Depends(get_current_user)):
     """Delete a document and its vectors"""
     try:
-        success = await document_service.delete_document(document_id)
+        success = await document_service.delete_document(document_id, current_user.user_id)
         if not success:
             raise HTTPException(status_code=404, detail="Document not found")
         
@@ -143,7 +143,7 @@ async def delete_document(document_id: str, current_user: KeycloakUser = Depends
 async def search_documents(request: SearchRequest, current_user: KeycloakUser = Depends(get_current_user)):
     """Search for similar documents"""
     try:
-        response = await document_service.search_documents(request)
+        response = await document_service.search_documents(request, current_user.user_id)
         return response
         
     except Exception as e:
