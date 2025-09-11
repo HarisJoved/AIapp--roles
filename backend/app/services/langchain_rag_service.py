@@ -357,30 +357,68 @@ Answer:""")
                 # Debug: Test direct retrieval with user filtering
                 try:
                     # Create retriever with user filtering if user_id is provided
-                    search_kwargs = {"k": 3}
+                    search_kwargs = {"k": 5}  # Increased to get more results
                     if user_id:
-                        # Add user_id filter to search kwargs
-                        search_kwargs["filter"] = {"user_id": user_id}
+                        # Don't add user_id filter here - we'll handle filtering in post-processing
+                        # This allows us to get both user documents and organization documents
+                        pass
                     
                     retriever = self.vectorstore.as_retriever(search_kwargs=search_kwargs)
                     docs = await asyncio.to_thread(retriever.get_relevant_documents, message)
-                    print(f"🔍 Direct retrieval found {len(docs)} documents for user {user_id}")
-                    for i, doc in enumerate(docs):
-                        print(f"  Doc {i}: {doc.page_content[:100]}...")
+                    print(f"🔍 Direct retrieval found {len(docs)} documents before filtering")
+                    
+                    # Filter documents to include user's documents and organization documents
+                    if user_id:
+                        filtered_docs = []
+                        for doc in docs:
+                            # Check if document belongs to user or is organization-wide
+                            doc_user_id = doc.metadata.get("user_id") if hasattr(doc, 'metadata') else None
+                            if doc_user_id is None or doc_user_id == user_id:
+                                filtered_docs.append(doc)
+                                print(f"  Including doc: user_id={doc_user_id}, content={doc.page_content[:100]}...")
+                            else:
+                                print(f"  Excluding doc: user_id={doc_user_id} (not user's doc)")
+                        docs = filtered_docs
+                    
+                    print(f"🔍 Direct retrieval found {len(docs)} documents for user {user_id} after filtering")
                 except Exception as e:
                     print(f"🔍 Error in direct retrieval: {e}")
                 
                 # Determine chat history source
                 chat_history = chat_history_override if chat_history_override is not None else memory.chat_memory.messages
                 
-                # Create a new retriever with user filtering if needed
+                # Create a custom retriever that includes both user and organization documents
                 if user_id:
-                    # Create a new retriever with user filtering
-                    search_kwargs = {"k": self.retrieval_config["top_k"]}
-                    search_kwargs["filter"] = {"user_id": user_id}
-                    user_retriever = self.vectorstore.as_retriever(search_kwargs=search_kwargs)
+                    # Create a custom retriever that filters for user + organization docs
+                    from langchain_core.retrievers import BaseRetriever
+                    from langchain_core.documents import Document
                     
-                    # Create a new RAG chain with user-filtered retriever
+                    class UserAndOrgRetriever(BaseRetriever):
+                        def __init__(self, vectorstore, user_id, k=3):
+                            super().__init__()
+                            self._vectorstore = vectorstore
+                            self._user_id = user_id
+                            self._k = k
+                        
+                        def get_relevant_documents(self, query: str) -> List[Document]:
+                            # Get documents from vectorstore without user filter
+                            search_kwargs = {"k": self._k * 2}  # Get more to filter
+                            retriever = self._vectorstore.as_retriever(search_kwargs=search_kwargs)
+                            docs = retriever.get_relevant_documents(query)
+                            
+                            # Filter to include user's documents and organization documents
+                            filtered_docs = []
+                            for doc in docs:
+                                doc_user_id = doc.metadata.get("user_id") if hasattr(doc, 'metadata') else None
+                                if doc_user_id is None or doc_user_id == self._user_id:
+                                    filtered_docs.append(doc)
+                            
+                            # Return top k filtered results
+                            return filtered_docs[:self._k]
+                    
+                    user_retriever = UserAndOrgRetriever(self.vectorstore, user_id, self.retrieval_config["top_k"])
+                    
+                    # Create a new RAG chain with custom retriever
                     from langchain.chains import ConversationalRetrievalChain
                     from langchain.prompts import PromptTemplate
                     

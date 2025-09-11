@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     # API Keys (optional for development)
     openai_api_key: Optional[str] = Field(default=None, env="OPENAI_API_KEY")
     google_api_key: Optional[str] = Field(default=None, env="GOOGLE_API_KEY")
+    
+    # Keycloak admin credentials for user management
+    keycloak_admin_username: Optional[str] = Field(default=None, env="KEYCLOAK_ADMIN_USERNAME")
+    keycloak_admin_password: Optional[str] = Field(default=None, env="KEYCLOAK_ADMIN_PASSWORD")
     pinecone_api_key: Optional[str] = Field(default=None, env="PINECONE_API_KEY")
     pinecone_environment: Optional[str] = Field(default=None, env="PINECONE_ENVIRONMENT")
     

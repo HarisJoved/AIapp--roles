@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from app.models.auth import User, TokenData
+from app.models.auth import User, TokenData, UserRole, UserStatus
 from app.config.settings import settings
 
 # Security scheme for JWT tokens
@@ -44,6 +44,26 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 username = decoded_token.get('preferred_username') or 'user'
                 name = decoded_token.get('name') or f"{decoded_token.get('given_name', '')} {decoded_token.get('family_name', '')}".strip() or 'User'
                 
+                # Extract roles from Keycloak token
+                keycloak_roles = []
+                if 'resource_access' in decoded_token and 'embedder-client' in decoded_token['resource_access']:
+                    keycloak_roles = decoded_token['resource_access']['embedder-client'].get('roles', [])
+                
+                # Determine primary role (use the first role found, or default to student)
+                primary_role = 'student'  # default
+                if keycloak_roles:
+                    # Priority order: admin > supervisor > teacher > student
+                    if 'admin' in keycloak_roles:
+                        primary_role = 'admin'
+                    elif 'supervisor' in keycloak_roles:
+                        primary_role = 'supervisor'
+                    elif 'teacher' in keycloak_roles:
+                        primary_role = 'teacher'
+                    elif 'student' in keycloak_roles:
+                        primary_role = 'student'
+                
+                print(f"DEBUG: Extracted roles from token: {keycloak_roles}, primary role: {primary_role}")
+                
             else:
                 raise ValueError("Invalid JWT token format")
             
@@ -54,19 +74,56 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
             email = 'user@example.com'
             username = 'mockuser'
             name = 'Mock User'
+            primary_role = 'student'
+            keycloak_roles = []
         
-        # Create user with actual or fallback data
-        user = User(
-            sub=user_id,  # This is what the chat router expects
-            user_id=user_id,
-            email=email,
-            username=username,
-            name=name,
-            roles=["user"],
-            groups=[]
-        )
+        # Try to get user from database first
+        try:
+            from app.services.user_management_service import get_user_management_service
+            user_service = get_user_management_service()
+            db_user = await user_service.get_user(user_id)
+        except Exception as e:
+            print(f"DEBUG: Failed to get user from database: {e}")
+            db_user = None
         
-        print(f"DEBUG: Auth service created user: {user.sub}, {user.user_id}")
+        if db_user:
+            # Use database user info, but prioritize Keycloak role if available
+            db_role = db_user.get("role", primary_role)
+            final_role = primary_role if primary_role != 'student' else db_role
+            
+            user = User(
+                sub=user_id,
+                user_id=user_id,
+                email=db_user.get("email", email),
+                username=db_user.get("username", username),
+                name=db_user.get("name", name),
+                role=UserRole(final_role),
+                status=UserStatus(db_user.get("status", "active")),
+                created_by=db_user.get("created_by"),
+                parent_id=db_user.get("parent_id"),
+                organization_id=db_user.get("organization_id"),
+                roles=keycloak_roles if keycloak_roles else [final_role],  # Use Keycloak roles or fallback
+                groups=db_user.get("groups", []),
+                metadata=db_user.get("metadata", {}),
+                created_at=db_user.get("created_at"),
+                updated_at=db_user.get("updated_at"),
+                last_login=db_user.get("last_login")
+            )
+        else:
+            # Fallback to basic user (for development/testing)
+            user = User(
+                sub=user_id,
+                user_id=user_id,
+                email=email,
+                username=username,
+                name=name,
+                role=UserRole(primary_role),  # Use extracted role
+                status=UserStatus.ACTIVE,
+                roles=keycloak_roles if keycloak_roles else [primary_role],  # Use Keycloak roles or fallback
+                groups=[]
+            )
+        
+        print(f"DEBUG: Auth service created user: {user.sub}, {user.user_id}, role: {user.role}")
         
         return user
         

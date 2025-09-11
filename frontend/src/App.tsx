@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Settings, Upload, Search, FileText, Activity, MessageSquare } from 'lucide-react';
+import { Settings, Upload, Search, FileText, Activity, MessageSquare, Users } from 'lucide-react';
 
 // Components
 import ErrorBoundary from './components/ErrorBoundary';
@@ -15,6 +15,8 @@ import ChatInterface from './components/chat/ChatInterface';
 import LoginPage from './components/auth/LoginPage';
 import SignupPage from './components/auth/SignupPage';
 import KeycloakCallback from './components/auth/KeycloakCallback';
+import UserManagement from './components/users/UserManagement';
+import UserProfile from './components/users/UserProfile';
 
 // Services
 import { configAPI, generalAPI } from './services/api';
@@ -27,6 +29,7 @@ import { AuthProvider, useAuthContext } from './contexts/AuthContext';
 const Sidebar: React.FC = () => {
   const location = useLocation();
   const { isLogin, userInfo, logout } = useAuthContext();
+  const [userPermissions, setUserPermissions] = useState<any>(null);
   
   const isActive = (path: string) => location.pathname === path;
   
@@ -36,6 +39,49 @@ const Sidebar: React.FC = () => {
       ? 'bg-blue-100 text-blue-700' 
       : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900'}
   `;
+
+  // Fetch user permissions when logged in
+  useEffect(() => {
+    const fetchPermissions = async () => {
+      if (isLogin && userInfo) {
+        try {
+          const token = localStorage.getItem('authToken');
+          if (token) {
+            console.log('DEBUG: Fetching permissions with token:', token.substring(0, 20) + '...');
+            const response = await fetch('/users/permissions', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            console.log('DEBUG: Permissions response status:', response.status);
+            if (response.ok) {
+              const permissions = await response.json();
+              console.log('DEBUG: Received permissions:', permissions);
+              setUserPermissions(permissions);
+            } else {
+              const errorText = await response.text();
+              console.error('DEBUG: Permissions request failed:', response.status, errorText);
+            }
+          } else {
+            console.log('DEBUG: No token available for permissions request');
+          }
+        } catch (error) {
+          console.error('DEBUG: Failed to fetch permissions:', error);
+        }
+      }
+    };
+
+    fetchPermissions();
+  }, [isLogin, userInfo]);
+
+  // Check if user can access a page
+  const canAccessPage = (page: string) => {
+    if (!userPermissions) {
+      // Fallback: only show chat and users if permissions haven't loaded yet
+      // This prevents students from seeing upload page before permissions load
+      const basicPages = ['chat', 'users'];
+      return basicPages.includes(page);
+    }
+    return userPermissions.accessible_pages?.includes(page) || false;
+  };
 
   const handleLogout = async () => {
     try {
@@ -61,35 +107,71 @@ const Sidebar: React.FC = () => {
       </div>
       
       <nav className="px-4 space-y-1">
-        <Link to="/" className={linkClass('/')}> 
-          <Upload className="w-4 h-4" />
-          <span>Upload & Process</span>
-        </Link>
+        {/* Debug info */}
+        {isLogin && (
+          <div className="px-3 py-2 text-xs text-gray-500 border-b mb-2">
+            Permissions: {userPermissions ? 'Loaded' : 'Loading...'}
+            {userPermissions && (
+              <div>Role: {userPermissions.role}</div>
+            )}
+          </div>
+        )}
         
-        <Link to="/chat" className={linkClass('/chat')}>
-          <MessageSquare className="w-4 h-4" />
-          <span>AI Chat</span>
-        </Link>
+        {/* Upload - Available to admin, supervisor, teacher */}
+        {canAccessPage('upload') && (
+          <Link to="/" className={linkClass('/')}> 
+            <Upload className="w-4 h-4" />
+            <span>Upload & Process</span>
+          </Link>
+        )}
         
-        <Link to="/search" className={linkClass('/search')}>
-          <Search className="w-4 h-4" />
-          <span>Search Documents</span>
-        </Link>
+        {/* Chat - Available to all roles */}
+        {canAccessPage('chat') && (
+          <Link to="/chat" className={linkClass('/chat')}>
+            <MessageSquare className="w-4 h-4" />
+            <span>AI Chat</span>
+          </Link>
+        )}
         
-        <Link to="/documents" className={linkClass('/documents')}>
-          <FileText className="w-4 h-4" />
-          <span>Document Library</span>
-        </Link>
+        {/* Search - Available to admin, supervisor, teacher */}
+        {canAccessPage('search') && (
+          <Link to="/search" className={linkClass('/search')}>
+            <Search className="w-4 h-4" />
+            <span>Search Documents</span>
+          </Link>
+        )}
         
-        <Link to="/config" className={linkClass('/config')}>
-          <Settings className="w-4 h-4" />
-          <span>Configuration</span>
-        </Link>
+        {/* Documents - Available to admin, supervisor, teacher */}
+        {canAccessPage('documents') && (
+          <Link to="/documents" className={linkClass('/documents')}>
+            <FileText className="w-4 h-4" />
+            <span>Document Library</span>
+          </Link>
+        )}
         
-        <Link to="/health" className={linkClass('/health')}>
-          <Activity className="w-4 h-4" />
-          <span>System Health</span>
-        </Link>
+        {/* Users - Available to all roles (different views based on role) */}
+        {canAccessPage('users') && (
+          <Link to="/users" className={linkClass('/users')}>
+            <Users className="w-4 h-4" />
+            <span>Users</span>
+          </Link>
+        )}
+        
+        {/* Configuration - Available to admin only */}
+        {canAccessPage('config') && (
+          <Link to="/config" className={linkClass('/config')}>
+            <Settings className="w-4 h-4" />
+            <span>Configuration</span>
+          </Link>
+        )}
+        
+        {/* Health - Available to admin only */}
+        {canAccessPage('health') && (
+          <Link to="/health" className={linkClass('/health')}>
+            <Activity className="w-4 h-4" />
+            <span>System Health</span>
+          </Link>
+        )}
 
         <div className="pt-4 border-t mt-4">
           {!isLogin ? (
@@ -163,6 +245,56 @@ const ChatPage: React.FC = () => (
     </ErrorBoundary>
   </div>
 );
+
+const UsersPage: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'profile' | 'management'>('profile');
+  const { userInfo } = useAuthContext();
+  
+  // Determine if user can manage others based on role from Keycloak token
+  const canManageUsers = userInfo && userInfo.resource_access?.['embedder-client']?.roles?.some(
+    (role: string) => ['admin', 'supervisor', 'teacher'].includes(role)
+  );
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">Users</h2>
+        <p className="text-gray-600 mt-1">Manage your profile and user relationships</p>
+      </div>
+
+      {canManageUsers && (
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'profile'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              My Profile
+            </button>
+            <button
+              onClick={() => setActiveTab('management')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'management'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              User Management
+            </button>
+          </nav>
+        </div>
+      )}
+
+      {activeTab === 'profile' && <UserProfile />}
+      {activeTab === 'management' && canManageUsers && <UserManagement />}
+      {!canManageUsers && activeTab !== 'profile' && <UserProfile />}
+    </div>
+  );
+};
 
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
   const { isLogin, isLoading } = useAuthContext();
@@ -427,6 +559,7 @@ const AppLayout: React.FC = () => {
             <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
             <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
             <Route path="/documents" element={<ProtectedRoute><DocumentsPage refreshTrigger={refreshTrigger} /></ProtectedRoute>} />
+            <Route path="/users" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
             <Route path="/config" element={<ProtectedRoute><ConfigPage onConfigUpdate={handleConfigUpdate} /></ProtectedRoute>} />
             <Route path="/health" element={<ProtectedRoute><HealthPage /></ProtectedRoute>} />
           </Routes>

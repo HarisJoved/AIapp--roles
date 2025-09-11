@@ -28,9 +28,16 @@ class DocumentChunk(BaseModel):
     content: str = Field(..., description="Chunk text content")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Chunk metadata")
     embedding: Optional[List[float]] = Field(None, description="Vector embedding")
-    user_id: str = Field(..., description="ID of the user who owns this chunk")
+    user_id: Optional[str] = Field(None, description="ID of the user who owns this chunk (None for organization documents)")
     
     
+class AccessLevel(str, Enum):
+    """Document access levels"""
+    PRIVATE = "private"  # Only uploader can access
+    HIERARCHY = "hierarchy"  # Accessible to users under uploader in hierarchy
+    PUBLIC = "public"  # Accessible to all users in same organization
+
+
 class Document(BaseModel):
     id: str = Field(..., description="Unique document ID")
     filename: str = Field(..., description="Original filename")
@@ -39,7 +46,14 @@ class Document(BaseModel):
     chunks: List[DocumentChunk] = Field(default_factory=list, description="Document chunks")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Document metadata")
     status: DocumentStatus = Field(default=DocumentStatus.UPLOADED, description="Processing status")
-    user_id: str = Field(..., description="ID of the user who uploaded the document")
+    user_id: Optional[str] = Field(None, description="ID of the user who uploaded the document (None for organization documents)")
+    
+    # Access control
+    access_level: AccessLevel = Field(default=AccessLevel.PRIVATE, description="Document access level")
+    accessible_to: List[str] = Field(default_factory=list, description="Specific user IDs with access")
+    organization_id: Optional[str] = Field(None, description="Organization ID for access control")
+    
+    # Timestamps
     created_at: datetime = Field(default_factory=datetime.utcnow, description="Creation timestamp")
     processed_at: Optional[datetime] = Field(None, description="Processing completion timestamp")
     error_message: Optional[str] = Field(None, description="Error message if processing failed")

@@ -1,10 +1,10 @@
 import os
 import asyncio
 from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Form
 from fastapi.responses import JSONResponse
 
-from app.models.document import DocumentType, DocumentUploadResponse, DocumentProcessingStatus
+from app.models.document import DocumentType, DocumentUploadResponse, DocumentProcessingStatus, AccessLevel
 from app.models.search import SearchRequest, SearchResponse
 from app.services.document_service import document_service
 from app.config.settings import settings
@@ -48,10 +48,25 @@ async def process_document_background(document_id: str, file_content: bytes):
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    access_level: str = Form("private"),
     current_user: KeycloakUser = Depends(get_current_user)
 ):
     """Upload and process a document"""
     try:
+        print(f"🔍 UPLOAD DEBUG: Received upload request")
+        print(f"🔍 UPLOAD DEBUG: File: {file.filename}")
+        print(f"🔍 UPLOAD DEBUG: Access Level String: {access_level}")
+        print(f"🔍 UPLOAD DEBUG: Current User ID: {current_user.user_id}")
+        print(f"🔍 UPLOAD DEBUG: Access Level Type: {type(access_level)}")
+        
+        # Convert string to AccessLevel enum
+        try:
+            access_level_enum = AccessLevel(access_level)
+            print(f"🔍 UPLOAD DEBUG: Converted to AccessLevel: {access_level_enum}")
+        except ValueError:
+            print(f"🔍 UPLOAD DEBUG: Invalid access level '{access_level}', defaulting to PRIVATE")
+            access_level_enum = AccessLevel.PRIVATE
+        
         # Validate file size
         file_content = await file.read()
         if len(file_content) > settings.max_file_size:
@@ -62,9 +77,14 @@ async def upload_document(
         
         # Determine file type
         file_type = get_document_type(file.filename)
+        print(f"🔍 UPLOAD DEBUG: File Type: {file_type}")
         
         # Create document record
-        document = await document_service.create_document(file.filename, file_type, current_user.user_id)
+        print(f"🔍 UPLOAD DEBUG: Creating document with user_id={current_user.user_id}, access_level={access_level_enum}")
+        document = await document_service.create_document(file.filename, file_type, current_user.user_id, access_level_enum)
+        print(f"🔍 UPLOAD DEBUG: Document created with ID: {document.id}")
+        print(f"🔍 UPLOAD DEBUG: Document user_id: {document.user_id}")
+        print(f"🔍 UPLOAD DEBUG: Document access_level: {document.access_level}")
         
         # Start background processing
         background_tasks.add_task(process_document_background, document.id, file_content)
@@ -101,7 +121,7 @@ async def get_document_status(document_id: str, current_user: KeycloakUser = Dep
 async def list_documents(current_user: KeycloakUser = Depends(get_current_user)):
     """List user's documents"""
     try:
-        documents = document_service.list_documents(current_user.user_id)
+        documents = await document_service.list_documents(current_user.user_id)
         return {
             "documents": [
                 {

@@ -1,5 +1,5 @@
 import uuid
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pathlib import Path
 
 from langchain_community.document_loaders import (
@@ -86,7 +86,7 @@ class LangChainDocumentProcessor(BaseDocumentProcessor):
         
         return cleaned_text.strip()
     
-    def split_text(self, text: str, metadata: Dict[str, Any] = None, user_id: str = None) -> List[DocumentChunk]:
+    def split_text(self, text: str, metadata: Dict[str, Any] = None, user_id: Optional[str] = None) -> List[DocumentChunk]:
         """Split text into chunks using LangChain text splitter"""
         if not text:
             return []
@@ -94,8 +94,9 @@ class LangChainDocumentProcessor(BaseDocumentProcessor):
         if metadata is None:
             metadata = {}
         
-        if user_id is None:
-            raise ValueError("user_id is required for document chunks")
+        # user_id can be None for organization documents
+        # if user_id is None:
+        #     raise ValueError("user_id is required for document chunks")
         
         # Split text into chunks
         text_chunks = self.text_splitter.split_text(text)
@@ -110,12 +111,14 @@ class LangChainDocumentProcessor(BaseDocumentProcessor):
                 "chunk_start": text.find(chunk_text) if chunk_text in text else -1
             }
             
+            print(f"🔍 CHUNK DEBUG: Creating chunk with user_id: {user_id} (type: {type(user_id)})")
             chunk = DocumentChunk(
                 id=str(uuid.uuid4()),
                 content=chunk_text,
                 metadata=chunk_metadata,
                 user_id=user_id
             )
+            print(f"🔍 CHUNK DEBUG: Chunk created successfully with user_id: {chunk.user_id}")
             chunks.append(chunk)
         
         return chunks 

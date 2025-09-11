@@ -1,8 +1,9 @@
 import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, File, AlertCircle, CheckCircle, Loader } from 'lucide-react';
+import { Upload, File, AlertCircle, CheckCircle, Loader, Lock, Users, Globe } from 'lucide-react';
 import { uploadAPI } from '../../services/api';
 import { DocumentUploadResponse } from '../../types/api';
+import { useAuthContext } from '../../contexts/AuthContext';
 
 interface DocumentUploaderProps {
   onUploadComplete: (response: DocumentUploadResponse) => void;
@@ -11,16 +12,29 @@ interface DocumentUploaderProps {
 const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onUploadComplete }) => {
   const [uploading, setUploading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [accessLevel, setAccessLevel] = useState<'private' | 'public'>('private');
+  const { userInfo } = useAuthContext();
+
+  // Debug: Monitor access level changes
+  React.useEffect(() => {
+    console.log('🔍 UPLOADER DEBUG: accessLevel state changed to:', accessLevel);
+  }, [accessLevel]);
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (acceptedFiles.length === 0) return;
 
     const file = acceptedFiles[0];
+    console.log('🔍 UPLOADER DEBUG: File dropped:', file.name);
+    console.log('🔍 UPLOADER DEBUG: Current accessLevel:', accessLevel);
+    console.log('🔍 UPLOADER DEBUG: accessLevel type:', typeof accessLevel);
+    console.log('🔍 UPLOADER DEBUG: accessLevel === "public":', accessLevel === 'public');
+    console.log('🔍 UPLOADER DEBUG: accessLevel === "private":', accessLevel === 'private');
+    
     setUploading(true);
     setMessage(null);
 
     try {
-      const response = await uploadAPI.uploadDocument(file);
+      const response = await uploadAPI.uploadDocument(file, accessLevel);
       setMessage({ type: 'success', text: response.message });
       onUploadComplete(response);
     } catch (error: any) {
@@ -31,7 +45,7 @@ const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onUploadComplete })
     } finally {
       setUploading(false);
     }
-  }, [onUploadComplete]);
+  }, [onUploadComplete, accessLevel]);
 
   const { getRootProps, getInputProps, isDragActive, acceptedFiles } = useDropzone({
     onDrop,
@@ -49,9 +63,97 @@ const DocumentUploader: React.FC<DocumentUploaderProps> = ({ onUploadComplete })
     maxSize: 10 * 1024 * 1024, // 10MB
   });
 
+  const getAccessLevelIcon = (level: string) => {
+    switch (level) {
+      case 'private': return <Lock className="w-4 h-4" />;
+      // case 'hierarchy': return <Users className="w-4 h-4" />; // Commented out
+      case 'public': return <Globe className="w-4 h-4" />;
+      default: return <Lock className="w-4 h-4" />;
+    }
+  };
+
+  // Check if user has management role (can set hierarchy/public access)
+  const canSetAdvancedAccess = userInfo && userInfo.resource_access?.['embedder-client']?.roles?.some(
+    (role: string) => ['admin', 'supervisor', 'teacher'].includes(role)
+  );
+
   return (
     <div className="bg-white p-6 rounded-lg shadow-md">
       <h3 className="text-lg font-semibold mb-4">Upload Document</h3>
+      
+      {/* Access Level Selection */}
+      <div className="mb-6">
+        <label className="block text-sm font-medium text-gray-700 mb-3">
+          Document Access Level
+        </label>
+        <div className="grid grid-cols-1 gap-3">
+          {/* Private Access */}
+          <div
+            onClick={() => {
+              console.log('🔍 UPLOADER DEBUG: Private access level clicked');
+              setAccessLevel('private');
+            }}
+            className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+              accessLevel === 'private'
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-200 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+              <Lock className="w-4 h-4 text-gray-500" />
+              <div>
+                <div className="font-medium text-gray-800">Private</div>
+                <div className="text-sm text-gray-600">Only you can access this document</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Hierarchy Access - Commented out for now */}
+          {/* {canSetAdvancedAccess && (
+            <div
+              onClick={() => setAccessLevel('hierarchy')}
+              className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                accessLevel === 'hierarchy'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <Users className="w-4 h-4 text-blue-500" />
+                <div>
+                  <div className="font-medium text-gray-800">Hierarchy</div>
+                  <div className="text-sm text-gray-600">Users under you can access this document</div>
+                </div>
+              </div>
+            </div>
+          )} */}
+
+          {/* Public Access - Only for management roles */}
+          {canSetAdvancedAccess && (
+            <div
+              onClick={() => {
+                console.log('🔍 UPLOADER DEBUG: Organization access level clicked');
+                console.log('🔍 UPLOADER DEBUG: Setting accessLevel to "public"');
+                setAccessLevel('public');
+                console.log('🔍 UPLOADER DEBUG: accessLevel state updated');
+              }}
+              className={`p-3 border-2 rounded-lg cursor-pointer transition-all ${
+                accessLevel === 'public'
+                  ? 'border-blue-500 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <Globe className="w-4 h-4 text-green-500" />
+                <div>
+                  <div className="font-medium text-gray-800">Organization</div>
+                  <div className="text-sm text-gray-600">All users in organization can access</div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
       
       <div
         {...getRootProps()}

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, IO
+from typing import List, Dict, Any, IO, Optional
 from pathlib import Path
 
 from app.models.document import Document, DocumentChunk, DocumentType
@@ -23,7 +23,7 @@ class BaseDocumentProcessor(ABC):
         pass
     
     @abstractmethod
-    def split_text(self, text: str, metadata: Dict[str, Any] = None, user_id: str = None) -> List[DocumentChunk]:
+    def split_text(self, text: str, metadata: Dict[str, Any] = None, user_id: Optional[str] = None) -> List[DocumentChunk]:
         """Split text into chunks with metadata"""
         pass
     
@@ -54,7 +54,9 @@ class BaseDocumentProcessor(ABC):
             }
             
             # Split into chunks
+            print(f"🔍 PROCESSOR DEBUG: Splitting text with user_id: {document.user_id} (type: {type(document.user_id)})")
             chunks = self.split_text(cleaned_text, metadata, document.user_id)
+            print(f"🔍 PROCESSOR DEBUG: Created {len(chunks)} chunks")
             
             # Update document
             document.content = cleaned_text

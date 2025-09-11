@@ -88,25 +88,44 @@ class PineconeClient(BaseVectorDBClient):
     async def upsert_vectors(self, chunks: List[DocumentChunk]) -> bool:
         """Upsert vectors to Pinecone"""
         try:
+            print(f"🔍 PINECONE DEBUG: Starting upsert_vectors with {len(chunks)} chunks")
+            
             if not self.index:
                 await self.initialize()
             
             # Prepare vectors for upsert
             vectors = []
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
                 if chunk.embedding:
-                    vectors.append({
+                    print(f"🔍 PINECONE DEBUG: Processing chunk {i}: id={chunk.id}, user_id={chunk.user_id}")
+                    
+                    metadata = {
+                        **chunk.metadata,
+                        "content": chunk.content[:1000],  # Limit content size
+                    }
+                    
+                    # Only add user_id if it exists (for private documents)
+                    if chunk.user_id:
+                        metadata["user_id"] = chunk.user_id
+                        print(f"🔍 PINECONE DEBUG: Added user_id to metadata: {chunk.user_id}")
+                    else:
+                        print(f"🔍 PINECONE DEBUG: No user_id for this chunk (organization document)")
+                    
+                    vector_data = {
                         "id": chunk.id,
                         "values": chunk.embedding,
-                        "metadata": {
-                            **chunk.metadata,
-                            "content": chunk.content[:1000],  # Limit content size
-                            "user_id": chunk.user_id
-                        }
-                    })
+                        "metadata": metadata
+                    }
+                    
+                    print(f"🔍 PINECONE DEBUG: Final vector metadata: {metadata}")
+                    vectors.append(vector_data)
             
             if vectors:
+                print(f"🔍 PINECONE DEBUG: Upserting {len(vectors)} vectors to Pinecone")
                 await asyncio.to_thread(self.index.upsert, vectors=vectors)
+                print(f"🔍 PINECONE DEBUG: Successfully upserted vectors to Pinecone")
+            else:
+                print(f"🔍 PINECONE DEBUG: No vectors to upsert")
             
             return True
         except Exception as e:
@@ -128,7 +147,10 @@ class PineconeClient(BaseVectorDBClient):
             # Build filter for user_id
             search_filter = filter_metadata or {}
             if user_id:
-                search_filter["user_id"] = user_id
+                # Include both user's private documents and organization documents (no user_id)
+                # Pinecone doesn't support OR conditions directly, so we'll handle this in post-processing
+                # For now, we'll search without user_id filter and filter in the application
+                pass  # Don't add user_id filter here
             
             # Perform search (run in thread to avoid blocking event loop)
             results = await asyncio.to_thread(
@@ -139,11 +161,32 @@ class PineconeClient(BaseVectorDBClient):
                 filter=search_filter
             )
             
-            # Convert to SearchResult objects
+            # Convert to SearchResult objects and filter by user access
             search_results = []
-            for match in results.matches:
+            print(f"🔍 SEARCH DEBUG: Found {len(results.matches)} matches from Pinecone")
+            
+            for i, match in enumerate(results.matches):
+                print(f"🔍 SEARCH DEBUG: Match {i}: score={match.score}, metadata={match.metadata}")
+                
                 if match.score >= threshold:
                     metadata = match.metadata or {}
+                    doc_user_id = metadata.get("user_id")
+                    
+                    print(f"🔍 SEARCH DEBUG: Processing match - doc_user_id: {doc_user_id}, user_id: {user_id}")
+                    
+                    # Apply user access filtering
+                    if user_id:
+                        # Include documents that either:
+                        # 1. Belong to the user (have user_id matching)
+                        # 2. Are organization-wide (no user_id in metadata)
+                        if doc_user_id and doc_user_id != user_id:
+                            print(f"🔍 SEARCH DEBUG: Skipping document belonging to other user: {doc_user_id}")
+                            continue  # Skip documents belonging to other users
+                        else:
+                            print(f"🔍 SEARCH DEBUG: Including document - user match or organization doc")
+                    else:
+                        print(f"🔍 SEARCH DEBUG: Including document - no user filter")
+                    
                     search_results.append(SearchResult(
                         chunk_id=match.id,
                         document_id=metadata.get("filename", "unknown"),
@@ -151,10 +194,51 @@ class PineconeClient(BaseVectorDBClient):
                         score=match.score,
                         metadata=metadata
                     ))
+                    print(f"🔍 SEARCH DEBUG: Added search result for document: {metadata.get('filename', 'unknown')}")
+            
+            print(f"🔍 SEARCH DEBUG: Returning {len(search_results)} search results")
             
             return search_results
         except Exception as e:
             raise RuntimeError(f"Failed to search vectors in Pinecone: {str(e)}")
+    
+    async def get_all_documents(self) -> List[Dict[str, Any]]:
+        """Get all unique documents from Pinecone"""
+        try:
+            if not self.index:
+                await self.initialize()
+            
+            # Get all vectors (this might be expensive for large indexes)
+            # For now, we'll use a dummy query to get all vectors
+            dummy_vector = [0.0] * self.dimension  # Create a dummy vector
+            
+            results = await asyncio.to_thread(
+                self.index.query,
+                vector=dummy_vector,
+                top_k=10000,  # Get a large number of results
+                include_metadata=True,
+                include_values=False
+            )
+            
+            # Extract unique documents
+            documents = {}
+            for match in results.matches:
+                metadata = match.metadata or {}
+                filename = metadata.get("filename", "unknown")
+                if filename not in documents:
+                    documents[filename] = {
+                        "filename": filename,
+                        "file_type": metadata.get("file_type", "unknown"),
+                        "user_id": metadata.get("user_id"),  # None for organization docs
+                        "chunk_count": 0
+                    }
+                documents[filename]["chunk_count"] += 1
+            
+            return list(documents.values())
+            
+        except Exception as e:
+            print(f"🔍 PINECONE DEBUG: Error getting all documents: {e}")
+            return []
     
     async def delete_vectors(self, chunk_ids: List[str]) -> bool:
         """Delete vectors from Pinecone"""

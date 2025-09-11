@@ -65,15 +65,30 @@ api.interceptors.response.use(
 
 // Upload API
 export const uploadAPI = {
-  uploadDocument: async (file: File): Promise<DocumentUploadResponse> => {
+  uploadDocument: async (file: File, accessLevel: string = 'private'): Promise<DocumentUploadResponse> => {
+    console.log('🔍 FRONTEND DEBUG: uploadDocument called');
+    console.log('🔍 FRONTEND DEBUG: file:', file.name);
+    console.log('🔍 FRONTEND DEBUG: accessLevel:', accessLevel);
+    console.log('🔍 FRONTEND DEBUG: accessLevel type:', typeof accessLevel);
+    
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('access_level', accessLevel);
+    
+    console.log('🔍 FRONTEND DEBUG: FormData created with access_level:', accessLevel);
+    
+    // Debug: Check what's actually in the FormData
+    console.log('🔍 FRONTEND DEBUG: FormData has file:', formData.has('file'));
+    console.log('🔍 FRONTEND DEBUG: FormData has access_level:', formData.has('access_level'));
+    console.log('🔍 FRONTEND DEBUG: FormData access_level value:', formData.get('access_level'));
     
     const response = await api.post<DocumentUploadResponse>('/upload/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
     });
+    
+    console.log('🔍 FRONTEND DEBUG: Upload response:', response.data);
     return response.data;
   },
 
