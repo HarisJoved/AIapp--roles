@@ -356,6 +356,37 @@ class MongoChatStore:
         await self.db.rag_prompts.delete_one({"user_id": user_id, "prompt_id": prompt_id})
 
 
+    # ---------- Class-level Prompt Assignment ----------
+    async def set_class_prompt(self, class_id: str, prompt_id: str) -> None:
+        """Assign a RAG prompt to a class (stores prompt_id on class document)."""
+        # Ensure prompt exists
+        prompt = await self.db.rag_prompts.find_one({"prompt_id": prompt_id}, {"_id": 0})
+        if not prompt:
+            raise ValueError("Prompt not found")
+        await self.db.class_assignments.update_one(
+            {"class_id": class_id},
+            {"$set": {"prompt_id": prompt_id, "updated_at": datetime.utcnow().isoformat()}},
+        )
+
+    async def clear_class_prompt(self, class_id: str) -> None:
+        """Remove a RAG prompt assignment from a class."""
+        await self.db.class_assignments.update_one(
+            {"class_id": class_id},
+            {"$unset": {"prompt_id": ""}, "$set": {"updated_at": datetime.utcnow().isoformat()}},
+        )
+
+    async def get_class_prompt(self, class_id: str) -> Optional[Dict[str, Any]]:
+        """Get the full prompt document assigned to a class, if any."""
+        class_doc = await self.db.class_assignments.find_one({"class_id": class_id}, {"prompt_id": 1, "_id": 0})
+        if not class_doc:
+            return None
+        pid = class_doc.get("prompt_id")
+        if not pid:
+            return None
+        prompt = await self.db.rag_prompts.find_one({"prompt_id": pid}, {"_id": 0})
+        return prompt
+
+
 # Global accessor
 mongo_store: Optional[MongoChatStore] = None
 

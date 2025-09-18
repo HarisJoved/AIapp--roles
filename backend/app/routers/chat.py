@@ -166,9 +166,19 @@ async def chat(
             from langchain.schema import HumanMessage, AIMessage, SystemMessage
             # Inject active user RAG prompt if available
             if request.user_id:
-                active_prompt = await store.get_active_rag_prompt(request.user_id)
-                if active_prompt and active_prompt.get("content"):
-                    prior_messages.append(SystemMessage(content=str(active_prompt.get("content"))))
+                # Class-level prompt takes precedence if class_id provided
+                class_prompt = None
+                if getattr(request, "class_id", None):
+                    try:
+                        class_prompt = await store.get_class_prompt(request.class_id)
+                    except Exception:
+                        class_prompt = None
+                if class_prompt and class_prompt.get("content"):
+                    prior_messages.append(SystemMessage(content=str(class_prompt.get("content"))))
+                else:
+                    active_prompt = await store.get_active_rag_prompt(request.user_id)
+                    if active_prompt and active_prompt.get("content"):
+                        prior_messages.append(SystemMessage(content=str(active_prompt.get("content"))))
             summaries = await store.list_summaries(conversation_id)
             for s in summaries:
                 layer = s.get("layer", 1)
@@ -293,9 +303,19 @@ async def stream_chat_response(rag_service: HybridRAGService, request: ChatReque
             from langchain.schema import HumanMessage, AIMessage, SystemMessage
             prior_messages = []
             if request.user_id:
-                active_prompt = await store.get_active_rag_prompt(request.user_id)
-                if active_prompt and active_prompt.get("content"):
-                    prior_messages.append(SystemMessage(content=str(active_prompt.get("content"))))
+                # Class-level prompt takes precedence if class_id provided
+                class_prompt = None
+                if getattr(request, "class_id", None):
+                    try:
+                        class_prompt = await store.get_class_prompt(request.class_id)
+                    except Exception:
+                        class_prompt = None
+                if class_prompt and class_prompt.get("content"):
+                    prior_messages.append(SystemMessage(content=str(class_prompt.get("content"))))
+                else:
+                    active_prompt = await store.get_active_rag_prompt(request.user_id)
+                    if active_prompt and active_prompt.get("content"):
+                        prior_messages.append(SystemMessage(content=str(active_prompt.get("content"))))
             summaries = await store.list_summaries(conversation_id)
             for s in summaries:
                 prior_messages.append(SystemMessage(content=f"Conversation summary (layer {s.get('layer', 1)}): {s.get('summary_text', '')}"))

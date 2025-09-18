@@ -12,6 +12,7 @@ from app.models.auth import (
 )
 from app.services.auth_service import get_current_user
 from app.services.user_management_service import get_user_management_service
+from app.services.mongo_chat_store import get_mongo_store
 
 router = APIRouter(prefix="/users", tags=["User Management"])
 
@@ -345,7 +346,68 @@ async def get_classes(
     try:
         user_service = get_user_management_service()
         classes = await user_service.get_user_classes(current_user.user_id)
+        # Enrich with assigned prompt info
+        try:
+            store = get_mongo_store()
+            enriched = []
+            for c in classes:
+                pid = c.get("prompt_id")
+                if pid:
+                    p = await store.db.rag_prompts.find_one({"prompt_id": pid}, {"_id": 0})
+                    if p:
+                        c["prompt"] = {"prompt_id": p.get("prompt_id"), "name": p.get("name"), "content": p.get("content", "")}
+                enriched.append(c)
+            classes = enriched
+        except Exception:
+            pass
         return classes
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+# ========== Class Prompt Management ==========
+
+@router.post("/classes/{class_id}/prompt")
+async def assign_prompt_to_class(
+    class_id: str,
+    request: Dict[str, Any],
+    current_user: User = Depends(get_current_user)
+):
+    """Assign a RAG prompt to a class. Admin and Supervisor only."""
+    try:
+        prompt_id = request.get("prompt_id")
+        if not prompt_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="prompt_id is required")
+
+        # Permission check
+        role = UserRole(current_user.role) if hasattr(current_user, 'role') else UserRole.STUDENT
+        if role not in [UserRole.ADMIN, UserRole.SUPERVISOR]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+
+        store = get_mongo_store()
+        await store.set_class_prompt(class_id, prompt_id)
+        return {"message": "Prompt assigned to class"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
+@router.delete("/classes/{class_id}/prompt")
+async def clear_class_prompt(
+    class_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Remove the RAG prompt assignment from a class. Admin and Supervisor only."""
+    try:
+        role = UserRole(current_user.role) if hasattr(current_user, 'role') else UserRole.STUDENT
+        if role not in [UserRole.ADMIN, UserRole.SUPERVISOR]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        store = get_mongo_store()
+        await store.clear_class_prompt(class_id)
+        return {"message": "Prompt cleared from class"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 

@@ -34,6 +34,7 @@ interface ClassAssignment {
   teacher_email?: string;
   students: string[];
   supervisor_id: string;
+  prompt?: { prompt_id: string; name: string; content?: string };
 }
 
 interface UserPermissions {
@@ -65,12 +66,15 @@ const UserManagement: React.FC = () => {
   const [classes, setClasses] = useState<ClassAssignment[]>([]);
   const [newClassName, setNewClassName] = useState('');
   const [selectedTeacher, setSelectedTeacher] = useState('');
+  const [prompts, setPrompts] = useState<{ prompt_id: string; name: string }[]>([]);
+  const [selectedPromptByClass, setSelectedPromptByClass] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (token) {
       fetchUserPermissions();
       fetchManagedUsers();
       fetchClasses();
+      fetchPrompts();
     }
   }, [token]);
 
@@ -116,6 +120,20 @@ const UserManagement: React.FC = () => {
       }
     } catch (error) {
       console.error('Error fetching classes:', error);
+    }
+  };
+
+  const fetchPrompts = async () => {
+    try {
+      const res = await fetch('/chat/prompts', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setPrompts((data?.prompts || []).map((p: any) => ({ prompt_id: p.prompt_id, name: p.name })));
+      }
+    } catch (e) {
+      console.error('Failed to fetch prompts', e);
     }
   };
 
@@ -194,6 +212,46 @@ const UserManagement: React.FC = () => {
     } catch (error) {
       console.error('Error deleting class:', error);
       alert('Error deleting class');
+    }
+  };
+
+  const assignPromptToClass = async (classId: string, promptId: string) => {
+    try {
+      const response = await fetch(`/users/classes/${classId}/prompt`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ prompt_id: promptId })
+      });
+      if (response.ok) {
+        alert('Prompt assigned to class');
+        await fetchClasses();
+      } else {
+        const error = await response.json();
+        alert(`Failed to assign prompt: ${error.detail}`);
+      }
+    } catch (e) {
+      console.error('Error assigning prompt', e);
+    }
+  };
+
+  const clearPromptFromClass = async (classId: string) => {
+    try {
+      const response = await fetch(`/users/classes/${classId}/prompt`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (response.ok) {
+        alert('Prompt cleared from class');
+        await fetchClasses();
+      } else {
+        const error = await response.json();
+        alert(`Failed to clear prompt: ${error.detail}`);
+      }
+    } catch (e) {
+      console.error('Error clearing prompt', e);
     }
   };
 
@@ -531,6 +589,9 @@ const UserManagement: React.FC = () => {
                         <p className="text-sm text-gray-600">
                           Students: {classItem.students?.length || 0}
                         </p>
+                        <p className="text-sm text-gray-600">
+                          Prompt: {classItem.prompt?.name || 'None'}
+                        </p>
                       </div>
                       <button
                         onClick={() => deleteClass(classItem.class_id, classItem.class_name)}
@@ -572,6 +633,42 @@ const UserManagement: React.FC = () => {
                               </button>
                             );
                           })}
+                      </div>
+                    </div>
+
+                    {/* Assign Prompt to Class */}
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Assign RAG Prompt to this Class
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={selectedPromptByClass[classItem.class_id] || ''}
+                          onChange={(e) => setSelectedPromptByClass({ ...selectedPromptByClass, [classItem.class_id]: e.target.value })}
+                          className="px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="">Select a prompt</option>
+                          {prompts.map((p) => (
+                            <option key={p.prompt_id} value={p.prompt_id}>{p.name}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => {
+                            const pid = selectedPromptByClass[classItem.class_id];
+                            if (pid) assignPromptToClass(classItem.class_id, pid);
+                          }}
+                          className="px-3 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                        >
+                          Assign Prompt
+                        </button>
+                        {classItem.prompt && (
+                          <button
+                            onClick={() => clearPromptFromClass(classItem.class_id)}
+                            className="px-3 py-2 bg-gray-100 text-gray-800 rounded-md hover:bg-gray-200"
+                          >
+                            Clear
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>

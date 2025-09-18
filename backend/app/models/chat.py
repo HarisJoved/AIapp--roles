@@ -17,6 +17,7 @@ class ChatRequest(BaseModel):
     message: str = Field(..., description="User message")
     conversation_id: Optional[str] = Field(None, description="Conversation ID")
     user_id: Optional[str] = Field(None, description="User ID")
+    class_id: Optional[str] = Field(None, description="Class ID to use class-level prompt and scope context")
     use_rag: bool = Field(default=True, description="Use document retrieval")
     stream: bool = Field(default=False, description="Stream response")
     temperature: Optional[float] = Field(None, description="Override model temperature")

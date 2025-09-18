@@ -278,6 +278,49 @@ class UserManagementService:
             except:
                 pass
             raise e
+
+    async def ensure_user_in_db(self, user: User) -> Dict[str, Any]:
+        """Ensure a minimal user record exists in MongoDB for a Keycloak user."""
+        existing = await self.get_user(user.user_id)
+        if existing:
+            return existing
+        now = datetime.utcnow().isoformat()
+        doc = {
+            "user_id": user.user_id,
+            "sub": user.sub,
+            "username": user.username,
+            "email": user.email,
+            "name": user.name,
+            "role": user.role.value if hasattr(user.role, 'value') else str(user.role),
+            "status": UserStatus.ACTIVE.value,
+            "created_by": None,
+            "parent_id": getattr(user, 'parent_id', None),
+            "organization_id": getattr(user, 'organization_id', None),
+            "roles": getattr(user, 'roles', [str(user.role)]),
+            "groups": getattr(user, 'groups', []),
+            "metadata": getattr(user, 'metadata', {}),
+            "created_at": now,
+            "updated_at": now,
+            "last_login": now,
+        }
+        await self.db.users.insert_one(doc)
+        await self._update_user_hierarchy(user.user_id)
+        return doc
+
+    async def ensure_admin_bootstrap(self, user: User) -> None:
+        """If the logging-in user is admin, ensure they exist and hierarchies are built."""
+        try:
+            role = user.role if isinstance(user.role, UserRole) else UserRole(str(user.role))
+        except Exception:
+            role = UserRole.ADMIN if str(getattr(user, 'role', 'admin')) == 'admin' else UserRole.STUDENT
+        if role != UserRole.ADMIN:
+            return
+        # Ensure admin user exists
+        await self.ensure_user_in_db(user)
+        # If admin has no hierarchy record, rebuild all
+        hierarchy = await self.db.user_hierarchies.find_one({"user_id": user.user_id})
+        if not hierarchy:
+            await self.rebuild_all_hierarchies()
     
     async def get_user(self, user_id: str) -> Optional[Dict[str, Any]]:
         """Get user by ID"""
@@ -288,36 +331,51 @@ class UserManagementService:
         print(f"DEBUG: Getting users under manager: {manager_id}, include_indirect: {include_indirect}")
         
         if include_indirect:
-            # Get all users in hierarchy under manager
-            hierarchy = await self.db.user_hierarchies.find_one({"user_id": manager_id}, {"_id": 0})
-            if not hierarchy:
-                print(f"DEBUG: No hierarchy found for manager {manager_id}, falling back to direct reports")
-                # Fallback to direct reports if no hierarchy exists
-                cursor = self.db.users.find({"parent_id": manager_id}, {"_id": 0})
-                users = await cursor.to_list(length=None)
-                print(f"DEBUG: Found {len(users)} direct reports")
-                return users
-            
-            # Find all users whose path contains manager_id
-            cursor = self.db.user_hierarchies.find({"path": manager_id}, {"_id": 0})
-            hierarchies = await cursor.to_list(length=None)
-            
-            user_ids = [h["user_id"] for h in hierarchies]
-            print(f"DEBUG: Found {len(user_ids)} users in hierarchy")
+            # Compute descendants purely from users collection (and class assignments for teachers)
+            seen: set[str] = set()
+            queue: List[str] = []
+            # seed with direct children
+            cur = self.db.users.find({"parent_id": manager_id}, {"user_id": 1, "role": 1, "_id": 0})
+            first = [u async for u in cur]
+            for u in first:
+                uid = u.get("user_id")
+                if uid:
+                    seen.add(uid)
+                    queue.append(uid)
+            # BFS over parent links
+            while queue:
+                current = queue.pop(0)
+                cur2 = self.db.users.find({"parent_id": current}, {"user_id": 1, "_id": 0})
+                for u in [uu async for uu in cur2]:
+                    uid = u.get("user_id")
+                    if uid and uid not in seen:
+                        seen.add(uid)
+                        queue.append(uid)
+            # Include students assigned to any teacher in the discovered set
+            if seen:
+                teacher_ids = [t for t in list(seen) if (await self.get_user(t) or {}).get("role") == UserRole.TEACHER.value]
+                if teacher_ids:
+                    curc = self.db.class_assignments.find({"teacher_id": {"$in": teacher_ids}}, {"students": 1, "_id": 0})
+                    classes = [c async for c in curc]
+                    for c in classes:
+                        for sid in c.get("students", []) or []:
+                            if sid and sid not in seen:
+                                seen.add(sid)
+
+            if not seen:
+                print(f"DEBUG: No indirect or direct users found for {manager_id}")
+                return []
+
+            cursor = self.db.users.find({"user_id": {"$in": list(seen)}}, {"_id": 0})
+            users = await cursor.to_list(length=None)
+            print(f"DEBUG: Returning {len(users)} users under {manager_id}")
+            return users
         else:
-            # Get only direct reports
+            # Only direct reports
             cursor = self.db.users.find({"parent_id": manager_id}, {"_id": 0})
             users = await cursor.to_list(length=None)
             print(f"DEBUG: Found {len(users)} direct reports")
             return users
-        
-        if user_ids:
-            cursor = self.db.users.find({"user_id": {"$in": user_ids}}, {"_id": 0})
-            users = await cursor.to_list(length=None)
-            print(f"DEBUG: Retrieved {len(users)} users from database")
-            return users
-        
-        return []
     
     async def get_user_classes(self, user_id: str) -> List[Dict[str, Any]]:
         """Get all classes for a user (as teacher or supervisor)"""
@@ -330,9 +388,35 @@ class UserManagementService:
         if role == UserRole.TEACHER:
             # Get classes where user is the teacher
             cursor = self.db.class_assignments.find({"teacher_id": user_id}, {"_id": 0})
-        elif role in [UserRole.SUPERVISOR, UserRole.ADMIN]:
-            # Get classes managed by supervisor/admin
+        elif role == UserRole.SUPERVISOR:
+            # Get classes managed by supervisor
             cursor = self.db.class_assignments.find({"supervisor_id": user_id}, {"_id": 0})
+        elif role == UserRole.ADMIN:
+            # Admin should see classes across their hierarchy (teachers/supervisors under them)
+            # Collect descendant user IDs
+            descendant_ids: List[str] = []
+            queue: List[str] = []
+            cur = self.db.users.find({"parent_id": user_id}, {"user_id": 1, "_id": 0})
+            first = [u async for u in cur]
+            for u in first:
+                uid = u.get("user_id")
+                if uid:
+                    descendant_ids.append(uid)
+                    queue.append(uid)
+            while queue:
+                current = queue.pop(0)
+                cur2 = self.db.users.find({"parent_id": current}, {"user_id": 1, "_id": 0})
+                for u in [uu async for uu in cur2]:
+                    uid = u.get("user_id")
+                    if uid and uid not in descendant_ids:
+                        descendant_ids.append(uid)
+                        queue.append(uid)
+            # Find classes where teacher or supervisor is in descendant set
+            query = {"$or": [
+                {"teacher_id": {"$in": descendant_ids}},
+                {"supervisor_id": {"$in": descendant_ids}},
+            ]}
+            cursor = self.db.class_assignments.find(query, {"_id": 0})
         else:
             return []
         
@@ -615,27 +699,30 @@ class UserManagementService:
             path.insert(0, current_parent)
             current_parent = parent.get("parent_id")
         
-        # Get direct children (users with parent_id = user_id)
-        cursor = self.db.users.find({"parent_id": user_id})
-        children = await cursor.to_list(length=None)
-        child_ids = [child["user_id"] for child in children]
-        
+        # Compute all descendants via BFS on users.parent_id
+        descendant_ids: List[str] = []
+        queue: List[str] = []
+        cursor = self.db.users.find({"parent_id": user_id}, {"user_id": 1, "_id": 0})
+        direct_children = [c.get("user_id") for c in await cursor.to_list(length=None) if c.get("user_id")]
+        queue.extend(direct_children)
+        while queue:
+            current = queue.pop(0)
+            descendant_ids.append(current)
+            cur_cursor = self.db.users.find({"parent_id": current}, {"user_id": 1, "_id": 0})
+            next_children = [c.get("user_id") for c in await cur_cursor.to_list(length=None) if c.get("user_id")]
+            queue.extend(next_children)
+
         # For teachers, also include students assigned to their classes
         if role == UserRole.TEACHER:
-            # Find all classes where this teacher is assigned
             cursor = self.db.class_assignments.find({"teacher_id": user_id})
             classes = await cursor.to_list(length=None)
-            
-            # Collect all student IDs from these classes
             for class_assignment in classes:
                 student_ids = class_assignment.get("students", [])
-                child_ids.extend(student_ids)
-            
-            # Remove duplicates
-            child_ids = list(set(child_ids))
+                descendant_ids.extend(student_ids)
+            descendant_ids = list(set(descendant_ids))
             print(f"DEBUG: Teacher {user_id} has {len(classes)} classes with students")
         
-        print(f"DEBUG: Found {len(child_ids)} children for user {user_id}: {child_ids}")
+        print(f"DEBUG: Found {len(descendant_ids)} descendants for user {user_id}: {descendant_ids}")
         
         # Update hierarchy record
         hierarchy_doc = {
@@ -644,7 +731,7 @@ class UserManagementService:
             "role": role.value,
             "level": level,
             "path": path,
-            "children": child_ids
+            "children": descendant_ids
         }
         
         await self.db.user_hierarchies.replace_one(

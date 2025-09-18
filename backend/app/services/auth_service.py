@@ -122,6 +122,14 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
                 roles=keycloak_roles if keycloak_roles else [primary_role],  # Use Keycloak roles or fallback
                 groups=[]
             )
+
+        # Bootstrap: ensure admin user exists in MongoDB and hierarchies are built so admin can view all indirect users
+        try:
+            from app.services.user_management_service import get_user_management_service
+            user_service = get_user_management_service()
+            await user_service.ensure_admin_bootstrap(user)
+        except Exception as e:
+            print(f"DEBUG: ensure_admin_bootstrap failed or skipped: {e}")
         
         print(f"DEBUG: Auth service created user: {user.sub}, {user.user_id}, role: {user.role}")
         
