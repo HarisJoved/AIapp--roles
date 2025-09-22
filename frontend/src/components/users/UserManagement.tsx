@@ -51,6 +51,8 @@ const UserManagement: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'users' | 'classes' | 'create'>('users');
   const [searchTerm, setSearchTerm] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const USERS_PAGE_SIZE = 10;
   
   // User creation form
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -68,6 +70,11 @@ const UserManagement: React.FC = () => {
   const [selectedTeacher, setSelectedTeacher] = useState('');
   const [prompts, setPrompts] = useState<{ prompt_id: string; name: string }[]>([]);
   const [selectedPromptByClass, setSelectedPromptByClass] = useState<Record<string, string>>({});
+  // UI state for managing large student lists per class
+  const [expandedClass, setExpandedClass] = useState<Record<string, boolean>>({});
+  const [studentSearchByClass, setStudentSearchByClass] = useState<Record<string, string>>({});
+  const [studentPageByClass, setStudentPageByClass] = useState<Record<string, number>>({});
+  const STUDENT_PAGE_SIZE = 10;
 
   useEffect(() => {
     if (token) {
@@ -77,6 +84,11 @@ const UserManagement: React.FC = () => {
       fetchPrompts();
     }
   }, [token]);
+
+  // Reset to first page on search term change
+  useEffect(() => {
+    setUserPage(1);
+  }, [searchTerm]);
 
   const fetchUserPermissions = async () => {
     try {
@@ -363,6 +375,11 @@ const UserManagement: React.FC = () => {
     user.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / USERS_PAGE_SIZE));
+  const safeUserPage = Math.min(userPage, totalUserPages);
+  const userStart = (safeUserPage - 1) * USERS_PAGE_SIZE;
+  const pagedUsers = filteredUsers.slice(userStart, userStart + USERS_PAGE_SIZE);
+
   const teachers = users.filter(user => user.role === 'teacher');
 
   if (loading) {
@@ -414,12 +431,7 @@ const UserManagement: React.FC = () => {
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           {[
-            { id: 'users', label: 'Users', icon: Users },
-            // Only show classes tab for admin and supervisor
-            ...(permissions && ['admin', 'supervisor'].includes(permissions.role) 
-              ? [{ id: 'classes', label: 'Classes', icon: GraduationCap }] 
-              : []
-            ),
+            { id: 'users', label: 'Users', icon: Users }
           ].map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -458,12 +470,13 @@ const UserManagement: React.FC = () => {
 
           {/* Users List */}
           <div className="bg-white shadow rounded-lg overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-200">
+            <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
               <h3 className="text-lg font-medium text-gray-900">Managed Users ({filteredUsers.length})</h3>
+              <span className="text-xs text-gray-500">Page {safeUserPage} of {totalUserPages}</span>
             </div>
             
             <div className="divide-y divide-gray-200">
-              {filteredUsers.map((user) => (
+              {pagedUsers.map((user) => (
                 <div key={user.user_id} className="px-6 py-4 flex items-center justify-between">
                   <div className="flex items-center space-x-4">
                     {getRoleIcon(user.role)}
@@ -511,6 +524,25 @@ const UserManagement: React.FC = () => {
               {filteredUsers.length === 0 && (
                 <div className="px-6 py-8 text-center text-gray-500">
                   {searchTerm ? 'No users match your search.' : 'No users found.'}
+                </div>
+              )}
+              {filteredUsers.length > 0 && (
+                <div className="px-6 py-4 flex items-center justify-between">
+                  <button
+                    disabled={safeUserPage <= 1}
+                    onClick={() => setUserPage(Math.max(1, safeUserPage - 1))}
+                    className={`px-3 py-1 text-sm rounded border ${safeUserPage <= 1 ? 'text-gray-400 border-gray-200' : 'text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    Prev
+                  </button>
+                  <div className="text-xs text-gray-500">Showing {userStart + 1}-{Math.min(userStart + USERS_PAGE_SIZE, filteredUsers.length)} of {filteredUsers.length}</div>
+                  <button
+                    disabled={safeUserPage >= totalUserPages}
+                    onClick={() => setUserPage(Math.min(totalUserPages, safeUserPage + 1))}
+                    className={`px-3 py-1 text-sm rounded border ${safeUserPage >= totalUserPages ? 'text-gray-400 border-gray-200' : 'text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                  >
+                    Next
+                  </button>
                 </div>
               )}
             </div>
@@ -604,36 +636,123 @@ const UserManagement: React.FC = () => {
                       </button>
                     </div>
                     
-                    {/* Assign Students to Class */}
+                    {/* Assign Students to Class (collapsible + paginated) */}
                     <div className="mt-3">
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Assign Students to this Class
-                      </label>
-                      <div className="flex gap-2 flex-wrap">
-                        {users
-                          .filter(user => user.role === 'student')
-                          .map((student) => {
-                            const isAssigned = classItem.students?.includes(student.user_id);
+                      <div className="flex items-center justify-between">
+                        <label className="block text-sm font-medium text-gray-700">
+                          Assign Students to this Class
+                        </label>
+                        <button
+                          onClick={() => setExpandedClass({ ...expandedClass, [classItem.class_id]: !expandedClass[classItem.class_id] })}
+                          className="text-blue-600 hover:text-blue-800 text-sm"
+                        >
+                          {expandedClass[classItem.class_id] ? 'Hide' : 'Manage'} students ({classItem.students?.length || 0} assigned)
+                        </button>
+                      </div>
+
+                      {/* Show assigned chips when collapsed */}
+                      {!expandedClass[classItem.class_id] && (classItem.students?.length || 0) > 0 && (
+                        <div className="mt-2 flex gap-2 flex-wrap">
+                          {classItem.students.slice(0, 10).map((sid) => {
+                            const s = users.find(u => u.user_id === sid);
                             return (
-                              <button
-                                key={student.user_id}
-                                onClick={() => isAssigned 
-                                  ? unassignStudentFromClass(student.user_id, classItem.class_id)
-                                  : assignStudentToClass(student.user_id, classItem.class_id)
-                                }
-                                className={`px-3 py-1 text-sm rounded-full border ${
-                                  isAssigned
-                                    ? 'bg-green-100 border-green-300 text-green-800 hover:bg-red-100 hover:border-red-300 hover:text-red-800'
-                                    : 'bg-gray-100 border-gray-300 text-gray-800 hover:bg-blue-100 hover:border-blue-300'
-                                }`}
-                                title={isAssigned ? 'Click to unassign' : 'Click to assign'}
-                              >
-                                {student.name}
-                                {isAssigned ? ' ✓' : ' +'}
-                              </button>
+                              <span key={sid} className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800 border border-green-300">
+                                {s?.name || sid}
+                              </span>
                             );
                           })}
-                      </div>
+                          {classItem.students.length > 10 && (
+                            <span className="text-xs text-gray-500">+{classItem.students.length - 10} more</span>
+                          )}
+                        </div>
+                      )}
+
+                      {expandedClass[classItem.class_id] && (
+                        <div className="mt-3 space-y-3">
+                          {/* Search input */}
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                            <input
+                              type="text"
+                              value={studentSearchByClass[classItem.class_id] || ''}
+                              onChange={(e) => {
+                                setStudentSearchByClass({ ...studentSearchByClass, [classItem.class_id]: e.target.value });
+                                setStudentPageByClass({ ...studentPageByClass, [classItem.class_id]: 1 });
+                              }}
+                              placeholder="Search students by name, email, or username"
+                              className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                            />
+                          </div>
+
+                          {/* Paginated list */}
+                          {(() => {
+                            const search = (studentSearchByClass[classItem.class_id] || '').toLowerCase();
+                            const allStudents = users.filter(u => u.role === 'student');
+                            const filtered = search
+                              ? allStudents.filter(s =>
+                                  s.name.toLowerCase().includes(search) ||
+                                  s.email.toLowerCase().includes(search) ||
+                                  s.username.toLowerCase().includes(search)
+                                )
+                              : allStudents;
+                            const page = studentPageByClass[classItem.class_id] || 1;
+                            const totalPages = Math.max(1, Math.ceil(filtered.length / STUDENT_PAGE_SIZE));
+                            const safePage = Math.min(page, totalPages);
+                            const start = (safePage - 1) * STUDENT_PAGE_SIZE;
+                            const pageItems = filtered.slice(start, start + STUDENT_PAGE_SIZE);
+                            return (
+                              <>
+                                <div className="flex gap-2 flex-wrap">
+                                  {pageItems.map((student) => {
+                                    const isAssigned = classItem.students?.includes(student.user_id);
+                                    return (
+                                      <button
+                                        key={student.user_id}
+                                        onClick={() => isAssigned
+                                          ? unassignStudentFromClass(student.user_id, classItem.class_id)
+                                          : assignStudentToClass(student.user_id, classItem.class_id)
+                                        }
+                                        className={`px-3 py-1 text-sm rounded-full border ${
+                                          isAssigned
+                                            ? 'bg-green-100 border-green-300 text-green-800 hover:bg-red-100 hover:border-red-300 hover:text-red-800'
+                                            : 'bg-gray-100 border-gray-300 text-gray-800 hover:bg-blue-100 hover:border-blue-300'
+                                        }`}
+                                        title={isAssigned ? 'Click to unassign' : 'Click to assign'}
+                                      >
+                                        {student.name}
+                                        {isAssigned ? ' ✓' : ' +'}
+                                      </button>
+                                    );
+                                  })}
+                                  {pageItems.length === 0 && (
+                                    <span className="text-sm text-gray-500">No students match your search.</span>
+                                  )}
+                                </div>
+                                {/* Pagination controls */}
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-xs text-gray-500">Page {safePage} of {totalPages}</span>
+                                  <div className="space-x-2">
+                                    <button
+                                      disabled={safePage <= 1}
+                                      onClick={() => setStudentPageByClass({ ...studentPageByClass, [classItem.class_id]: Math.max(1, safePage - 1) })}
+                                      className={`px-2 py-1 text-sm rounded border ${safePage <= 1 ? 'text-gray-400 border-gray-200' : 'text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                                    >
+                                      Prev
+                                    </button>
+                                    <button
+                                      disabled={safePage >= totalPages}
+                                      onClick={() => setStudentPageByClass({ ...studentPageByClass, [classItem.class_id]: Math.min(totalPages, safePage + 1) })}
+                                      className={`px-2 py-1 text-sm rounded border ${safePage >= totalPages ? 'text-gray-400 border-gray-200' : 'text-gray-700 border-gray-300 hover:bg-gray-50'}`}
+                                    >
+                                      Next
+                                    </button>
+                                  </div>
+                                </div>
+                              </>
+                            );
+                          })()}
+                        </div>
+                      )}
                     </div>
 
                     {/* Assign Prompt to Class */}

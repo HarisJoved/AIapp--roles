@@ -191,10 +191,6 @@ const UserProfileComponent: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">User Profile</h2>
-        <p className="text-gray-600 mt-1">Your account information and relationships</p>
-      </div>
 
       {/* Profile Card */}
       <div className="bg-white shadow rounded-lg overflow-hidden">
