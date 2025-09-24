@@ -501,6 +501,69 @@ class UserManagementService:
         )
         
         return result.modified_count > 0
+
+    async def delete_user(self, manager_id: str, target_user_id: str) -> bool:
+        """Delete a user from Keycloak and MongoDB with hierarchy validation and cleanup."""
+        manager = await self.get_user(manager_id)
+        target_user = await self.get_user(target_user_id)
+
+        if not manager or not target_user:
+            return False
+
+        manager_role = UserRole(manager["role"])
+        target_role = UserRole(target_user["role"])
+
+        if not self.can_manage_user(manager_role, target_role):
+            raise ValueError("Insufficient permissions to delete this user")
+
+        # Best-effort cleanup in Mongo whether KC delete succeeds or not
+        # 1) If student, remove from any class assignments
+        try:
+            if target_role == UserRole.STUDENT:
+                await self.db.class_assignments.update_many(
+                    {},
+                    {"$pull": {"students": target_user_id}}
+                )
+        except Exception:
+            pass
+
+        # 2) If teacher, delete their classes
+        try:
+            if target_role == UserRole.TEACHER:
+                await self.db.class_assignments.delete_many({"teacher_id": target_user_id})
+        except Exception:
+            pass
+
+        # 3) If supervisor, optionally we could re-parent or leave as-is. No-op for now.
+
+        # Delete in Keycloak first
+        try:
+            await self.keycloak.delete_keycloak_user(target_user_id)
+        except Exception as e:
+            # If KC deletion fails, stop to avoid orphan state mismatch
+            raise e
+
+        # Delete in MongoDB
+        await self.db.users.delete_one({"user_id": target_user_id})
+        await self.db.user_hierarchies.delete_one({"user_id": target_user_id})
+
+        # Remove from others' hierarchies children arrays
+        try:
+            await self.db.user_hierarchies.update_many(
+                {}, {"$pull": {"children": target_user_id}}
+            )
+        except Exception:
+            pass
+
+        # Update parent hierarchy if applicable
+        try:
+            parent_id = target_user.get("parent_id")
+            if parent_id:
+                await self._update_user_hierarchy(parent_id)
+        except Exception:
+            pass
+
+        return True
     
     # ========== Class Management ==========
     

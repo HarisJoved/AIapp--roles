@@ -161,6 +161,24 @@ async def update_user_status(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Delete a user from Keycloak and MongoDB (manager must outrank target)."""
+    try:
+        user_service = get_user_management_service()
+        success = await user_service.delete_user(current_user.user_id, user_id)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        return {"message": "User deleted successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.get("/permissions", response_model=Dict[str, Any])
 async def get_user_permissions(
     current_user: User = Depends(get_current_user)

@@ -159,4 +159,12 @@ export const generalAPI = {
   },
 };
 
+// Users API
+export const usersAPI = {
+  deleteUser: async (userId: string): Promise<{ message: string }> => {
+    const response = await api.delete(`/users/${userId}`);
+    return response.data;
+  },
+};
+
 export default api; 

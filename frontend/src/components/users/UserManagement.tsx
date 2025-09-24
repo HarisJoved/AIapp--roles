@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Users, Settings, Search, Eye, UserCheck, UserX, GraduationCap, Shield } from 'lucide-react';
+import { Plus, Users, Settings, Search, Eye, UserCheck, UserX, GraduationCap, Shield, Trash2 } from 'lucide-react';
+import { usersAPI } from '../../services/api';
+import BatchUserUpload from './BatchUserUpload';
 import { useAuthContext } from '../../contexts/AuthContext';
 
 // Types
@@ -56,6 +58,7 @@ const UserManagement: React.FC = () => {
   
   // User creation form
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showBatchUpload, setShowBatchUpload] = useState(false);
   const [createUserData, setCreateUserData] = useState<UserCreationRequest>({
     username: '',
     email: '',
@@ -319,6 +322,18 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  const handleDeleteUser = async (userId: string, name: string) => {
+    if (!window.confirm(`Delete user ${name}? This removes them from Keycloak and MongoDB.`)) return;
+    try {
+      await usersAPI.deleteUser(userId);
+      await fetchManagedUsers();
+      alert('User deleted successfully');
+    } catch (e: any) {
+      console.error('Failed to delete user', e);
+      alert(`Failed to delete user: ${e?.response?.data?.detail || e?.message || 'Unknown error'}`);
+    }
+  };
+
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName || !selectedTeacher) return;
@@ -402,13 +417,22 @@ const UserManagement: React.FC = () => {
         </div>
         
         {permissions && permissions.can_create_roles.length > 0 && (
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create User</span>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create User</span>
+            </button>
+            <button
+              onClick={() => setShowBatchUpload(true)}
+              className="flex items-center space-x-2 px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-900"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Batch Create</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -515,6 +539,14 @@ const UserManagement: React.FC = () => {
                       
                       <button className="text-blue-600 hover:text-blue-800" title="View details">
                         <Eye className="w-4 h-4" />
+                      </button>
+
+                      <button
+                        onClick={() => handleDeleteUser(user.user_id, user.name)}
+                        className="text-red-600 hover:text-red-800"
+                        title="Delete user"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </button>
                     </div>
                   </div>
@@ -882,6 +914,13 @@ const UserManagement: React.FC = () => {
             </form>
           </div>
         </div>
+      )}
+
+      {showBatchUpload && (
+        <BatchUserUpload
+          onClose={() => setShowBatchUpload(false)}
+          onComplete={() => { setShowBatchUpload(false); fetchManagedUsers(); }}
+        />
       )}
     </div>
   );
