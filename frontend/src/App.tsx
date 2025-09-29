@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Settings, Upload, Search, FileText, Activity, MessageSquare, Users, GraduationCap, User as UserIcon } from 'lucide-react';
+import { Settings, Upload, Search, FileText, Activity, MessageSquare, Users, GraduationCap, User as UserIcon, BarChart3, Home } from 'lucide-react';
 
 // Components
 import ErrorBoundary from './components/ErrorBoundary';
@@ -18,6 +18,7 @@ import KeycloakCallback from './components/auth/KeycloakCallback';
 import UserManagement from './components/users/UserManagement';
 import UserProfile from './components/users/UserProfile';
 import ClassManagement from './components/users/ClassManagement';
+import SchoolDashboard from './components/dashboard/SchoolDashboard';
 
 // Services
 import { configAPI, generalAPI } from './services/api';
@@ -118,41 +119,47 @@ const Sidebar: React.FC = () => {
           </div>
         )}
         
-        {/* Profile - Home */}
+        {/* Dashboard - Home */}
         <Link to="/" className={linkClass('/')}> 
+          <Home className="w-4 h-4" />
+          <span>Dashboard</span>
+        </Link>
+        
+        {/* Profile */}
+        <Link to="/profile" className={linkClass('/profile')}> 
           <UserIcon className="w-4 h-4" />
           <span>My Profile</span>
         </Link>
         {/* Upload - Available to admin, supervisor, teacher */}
         {canAccessPage('upload') && (
           <Link to="/upload" className={linkClass('/upload')}> 
-            <Upload className="w-4 h-4" />
-            <span>Upload & Process</span>
-          </Link>
+          <Upload className="w-4 h-4" />
+          <span>Upload & Process</span>
+        </Link>
         )}
         
         {/* Chat - Available to all roles */}
         {canAccessPage('chat') && (
-          <Link to="/chat" className={linkClass('/chat')}>
-            <MessageSquare className="w-4 h-4" />
-            <span>AI Chat</span>
-          </Link>
+        <Link to="/chat" className={linkClass('/chat')}>
+          <MessageSquare className="w-4 h-4" />
+          <span>AI Chat</span>
+        </Link>
         )}
         
         {/* Search - Available to admin, supervisor, teacher */}
         {canAccessPage('search') && (
-          <Link to="/search" className={linkClass('/search')}>
-            <Search className="w-4 h-4" />
-            <span>Search Documents</span>
-          </Link>
+        <Link to="/search" className={linkClass('/search')}>
+          <Search className="w-4 h-4" />
+          <span>Search Documents</span>
+        </Link>
         )}
         
         {/* Documents - Available to admin, supervisor, teacher */}
         {canAccessPage('documents') && (
-          <Link to="/documents" className={linkClass('/documents')}>
-            <FileText className="w-4 h-4" />
-            <span>Document Library</span>
-          </Link>
+        <Link to="/documents" className={linkClass('/documents')}>
+          <FileText className="w-4 h-4" />
+          <span>Document Library</span>
+        </Link>
         )}
         
         {/* Users - Available to all roles (different views based on role) */}
@@ -172,18 +179,18 @@ const Sidebar: React.FC = () => {
         
         {/* Configuration - Available to admin only */}
         {canAccessPage('config') && (
-          <Link to="/config" className={linkClass('/config')}>
-            <Settings className="w-4 h-4" />
-            <span>Configuration</span>
-          </Link>
+        <Link to="/config" className={linkClass('/config')}>
+          <Settings className="w-4 h-4" />
+          <span>Configuration</span>
+        </Link>
         )}
         
         {/* Health - Available to admin only */}
         {canAccessPage('health') && (
-          <Link to="/health" className={linkClass('/health')}>
-            <Activity className="w-4 h-4" />
-            <span>System Health</span>
-          </Link>
+        <Link to="/health" className={linkClass('/health')}>
+          <Activity className="w-4 h-4" />
+          <span>System Health</span>
+        </Link>
         )}
 
         <div className="pt-4 border-t mt-4">
@@ -279,6 +286,12 @@ const UsersPage: React.FC = () => {
     </div>
   );
 };
+
+const DashboardPage: React.FC = () => (
+  <div className="space-y-6">
+    <SchoolDashboard />
+  </div>
+);
 
 const ProfilePage: React.FC = () => (
   <div className="space-y-6">
@@ -549,7 +562,7 @@ const AppLayout: React.FC = () => {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
             <Route path="/auth/callback" element={<KeycloakCallback />} />
-            <Route path="/" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
             <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
             <Route path="/upload" element={<ProtectedRoute><UploadPage onUpload={handleUpload} /></ProtectedRoute>} />
             <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />

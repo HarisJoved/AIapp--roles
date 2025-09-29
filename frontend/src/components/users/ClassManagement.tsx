@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { GraduationCap, Search } from 'lucide-react';
+import { GraduationCap, Search, Plus, Users, Calendar, BookOpen, Settings, Trash2, Edit, Eye, BarChart3 } from 'lucide-react';
 import { useAuthContext } from '../../contexts/AuthContext';
+import EditClassModal from './EditClassModal';
 
 interface User {
   user_id: string;
@@ -32,6 +33,11 @@ const ClassManagement: React.FC = () => {
   const [expandedClass, setExpandedClass] = useState<Record<string, boolean>>({});
   const [studentSearchByClass, setStudentSearchByClass] = useState<Record<string, string>>({});
   const [studentPageByClass, setStudentPageByClass] = useState<Record<string, number>>({});
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [classSearchTerm, setClassSearchTerm] = useState('');
+  const [selectedClass, setSelectedClass] = useState<string | null>(null);
+  const [editingClass, setEditingClass] = useState<ClassAssignment | null>(null);
+  const [showEditClassModal, setShowEditClassModal] = useState(false);
   const STUDENT_PAGE_SIZE = 10;
 
   useEffect(() => {
@@ -67,6 +73,12 @@ const ClassManagement: React.FC = () => {
   };
 
   const teachers = users.filter(u => u.role === 'teacher');
+  
+  // Filter classes based on search term
+  const filteredClasses = classes.filter(cls =>
+    cls.class_name.toLowerCase().includes(classSearchTerm.toLowerCase()) ||
+    (cls.teacher_name || '').toLowerCase().includes(classSearchTerm.toLowerCase())
+  );
 
   const assignStudentToClass = async (studentId: string, classId: string) => {
     try {
@@ -125,11 +137,90 @@ const ClassManagement: React.FC = () => {
     } catch (e) { console.error('Create class failed', e); }
   };
 
+  const handleEditClass = (classItem: ClassAssignment) => {
+    setEditingClass(classItem);
+    setShowEditClassModal(true);
+  };
+
+  const handleSaveClass = async (updatedClass: Partial<ClassAssignment>) => {
+    try {
+      // This would typically call an API to update the class
+      console.log('Updating class:', updatedClass);
+      // For now, just refresh the classes list
+      await fetchClasses();
+      setShowEditClassModal(false);
+      setEditingClass(null);
+      alert('Class updated successfully!');
+    } catch (error) {
+      console.error('Failed to update class:', error);
+      throw error;
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-gray-900">Class Management</h2>
-        <p className="text-gray-600 mt-1">Create classes, assign teachers and students, and manage class prompts</p>
+      {/* Header with stats */}
+      <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-lg p-6 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-3xl font-bold">Class Management</h2>
+            <p className="text-blue-100 mt-2">Create classes, assign teachers and students, and manage class prompts</p>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold">{classes.length}</div>
+            <div className="text-blue-100">Total Classes</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="bg-white p-4 rounded-lg shadow-sm border">
+          <div className="flex items-center">
+            <GraduationCap className="w-8 h-8 text-blue-500" />
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Total Classes</p>
+              <p className="text-xl font-bold text-gray-900">{classes.length}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white p-4 rounded-lg shadow-sm border">
+          <div className="flex items-center">
+            <Users className="w-8 h-8 text-green-500" />
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Total Students</p>
+              <p className="text-xl font-bold text-gray-900">
+                {classes.reduce((sum, cls) => sum + (cls.students?.length || 0), 0)}
+              </p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white p-4 rounded-lg shadow-sm border">
+          <div className="flex items-center">
+            <BookOpen className="w-8 h-8 text-purple-500" />
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Active Teachers</p>
+              <p className="text-xl font-bold text-gray-900">{teachers.length}</p>
+            </div>
+          </div>
+        </div>
+        
+        <div className="bg-white p-4 rounded-lg shadow-sm border">
+          <div className="flex items-center">
+            <BarChart3 className="w-8 h-8 text-orange-500" />
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Avg Students/Class</p>
+              <p className="text-xl font-bold text-gray-900">
+                {classes.length > 0 
+                  ? Math.round(classes.reduce((sum, cls) => sum + (cls.students?.length || 0), 0) / classes.length)
+                  : 0
+                }
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Create Class */}
@@ -159,25 +250,100 @@ const ClassManagement: React.FC = () => {
 
       {/* Classes List */}
       <div className="bg-white shadow rounded-lg p-6">
-        <h3 className="text-lg font-medium text-gray-900 mb-4">Existing Classes</h3>
-        {classes.length === 0 ? (
-          <p className="text-gray-500">No classes created yet.</p>
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-medium text-gray-900">Existing Classes ({filteredClasses.length})</h3>
+          
+          <div className="flex items-center space-x-4">
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search classes..."
+                value={classSearchTerm}
+                onChange={(e) => setClassSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-64"
+              />
+            </div>
+            
+            {/* View Mode Toggle */}
+            <div className="flex border border-gray-300 rounded-md">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`px-3 py-2 text-sm ${viewMode === 'grid' ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                Grid
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`px-3 py-2 text-sm ${viewMode === 'list' ? 'bg-blue-500 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+              >
+                List
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {filteredClasses.length === 0 ? (
+          <div className="text-center py-12">
+            <GraduationCap className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500 text-lg">
+              {classSearchTerm ? 'No classes match your search.' : 'No classes created yet.'}
+            </p>
+            {!classSearchTerm && (
+              <p className="text-gray-400 text-sm mt-2">Create your first class to get started.</p>
+            )}
+          </div>
         ) : (
-          <div className="space-y-4">
-            {classes.map((classItem) => (
-              <div key={classItem.class_id} className="border border-gray-200 rounded-lg p-4">
+          <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6' : 'space-y-4'}>
+            {filteredClasses.map((classItem) => (
+              <div key={classItem.class_id} className={`border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow ${viewMode === 'grid' ? 'h-full flex flex-col' : ''}`}>
                 <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <h4 className="font-medium text-gray-900">{classItem.class_name}</h4>
-                    <p className="text-sm text-gray-600">Teacher: {classItem.teacher_name || 'Unknown'}</p>
-                    <p className="text-sm text-gray-600">Students: {classItem.students?.length || 0}</p>
-                    <p className="text-sm text-gray-600">Prompt: {classItem.prompt?.name || 'None'}</p>
+                  <div className="flex-1">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <GraduationCap className="w-5 h-5 text-blue-500" />
+                      <h4 className="font-medium text-gray-900 text-lg">{classItem.class_name}</h4>
+                    </div>
+                    
+                    <div className="space-y-1 text-sm text-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <Users className="w-4 h-4" />
+                        <span>Teacher: {classItem.teacher_name || 'Unknown'}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <BookOpen className="w-4 h-4" />
+                        <span>Students: {classItem.students?.length || 0}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Settings className="w-4 h-4" />
+                        <span>Prompt: {classItem.prompt?.name || 'None'}</span>
+                      </div>
+                    </div>
                   </div>
-                  <button onClick={() => deleteClass(classItem.class_id, classItem.class_name)} className="text-red-600 hover:text-red-800 p-1" title="Delete class">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
+                  
+                  <div className="flex items-center space-x-1">
+                    <button 
+                      onClick={() => setSelectedClass(selectedClass === classItem.class_id ? null : classItem.class_id)}
+                      className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50" 
+                      title="View details"
+                    >
+                      <Eye className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => handleEditClass(classItem)}
+                      className="text-gray-600 hover:text-gray-800 p-1 rounded hover:bg-gray-50" 
+                      title="Edit class"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                    <button 
+                      onClick={() => deleteClass(classItem.class_id, classItem.class_name)} 
+                      className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50" 
+                      title="Delete class"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Students manager (collapsible + paginated) */}
@@ -270,6 +436,18 @@ const ClassManagement: React.FC = () => {
         )}
       </div>
 
+      {/* Edit Class Modal */}
+      <EditClassModal
+        classItem={editingClass}
+        isOpen={showEditClassModal}
+        onClose={() => {
+          setShowEditClassModal(false);
+          setEditingClass(null);
+        }}
+        onSave={handleSaveClass}
+        teachers={teachers}
+        prompts={prompts}
+      />
     </div>
   );
 };

@@ -165,6 +165,10 @@ export const usersAPI = {
     const response = await api.delete(`/users/${userId}`);
     return response.data;
   },
+  updateUser: async (userId: string, updateData: any): Promise<{ message: string }> => {
+    const response = await api.put(`/users/${userId}`, updateData);
+    return response.data;
+  },
 };
 
 export default api; 

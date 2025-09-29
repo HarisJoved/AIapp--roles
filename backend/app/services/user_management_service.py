@@ -150,6 +150,48 @@ class KeycloakService:
             print(f"Error assigning role to user: {str(e)}")
             raise
 
+    async def update_keycloak_user(self, user_id: str, update_data: dict):
+        """Update user in Keycloak"""
+        try:
+            token = await self.get_admin_token()
+            headers = {
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json"
+            }
+            
+            # First, get the current user data to merge with updates
+            get_url = f"{self.keycloak_url}/admin/realms/{self.realm}/users/{user_id}"
+            get_response = requests.get(get_url, headers=headers)
+            get_response.raise_for_status()
+            current_user = get_response.json()
+            
+            # Merge current data with updates
+            updated_user = {**current_user, **update_data}
+            
+            # Remove fields that shouldn't be sent in updates
+            fields_to_remove = ['id', 'createdTimestamp', 'username']
+            for field in fields_to_remove:
+                updated_user.pop(field, None)
+            
+            print(f"DEBUG: Updating Keycloak user {user_id} with data: {updated_user}")
+            
+            update_url = f"{self.keycloak_url}/admin/realms/{self.realm}/users/{user_id}"
+            response = requests.put(update_url, headers=headers, json=updated_user)
+            
+            if response.status_code != 204:  # Keycloak returns 204 for successful updates
+                print(f"DEBUG: Keycloak response status: {response.status_code}")
+                print(f"DEBUG: Keycloak response text: {response.text}")
+                response.raise_for_status()
+            
+            print(f"Successfully updated Keycloak user {user_id}")
+            
+        except Exception as e:
+            print(f"Error updating Keycloak user: {str(e)}")
+            if hasattr(e, 'response') and e.response is not None:
+                print(f"Response status: {e.response.status_code}")
+                print(f"Response text: {e.response.text}")
+            raise
+
     async def delete_keycloak_user(self, user_id: str):
         """Delete user from Keycloak"""
         try:
@@ -501,6 +543,100 @@ class UserManagementService:
         )
         
         return result.modified_count > 0
+
+    async def update_user(self, manager_id: str, user_id: str, update_data: dict) -> bool:
+        """Update user information in both Keycloak and MongoDB"""
+        manager = await self.get_user(manager_id)
+        target_user = await self.get_user(user_id)
+        
+        if not manager or not target_user:
+            raise ValueError("Manager or target user not found")
+        
+        manager_role = UserRole(manager["role"])
+        target_role = UserRole(target_user["role"])
+        
+        if not self.can_manage_user(manager_role, target_role):
+            raise ValueError("Insufficient permissions to update this user")
+        
+        # Check if role is being changed and if manager has permission
+        if "role" in update_data and update_data["role"] != target_user["role"]:
+            if manager_role != UserRole.ADMIN:
+                raise ValueError("Only admins can change user roles")
+        
+        # Prepare update data for MongoDB
+        mongo_update = {}
+        keycloak_update = {}
+        
+        # Map fields to appropriate updates
+        for field, value in update_data.items():
+            if field == "name":
+                # Split name into first and last name for Keycloak
+                name_parts = value.split(" ", 1)
+                keycloak_update["firstName"] = name_parts[0]
+                if len(name_parts) > 1:
+                    keycloak_update["lastName"] = name_parts[1]
+                mongo_update["name"] = value
+            elif field == "email":
+                keycloak_update["email"] = value
+                mongo_update["email"] = value
+            elif field == "username":
+                # Note: Keycloak doesn't allow username updates via API in most cases
+                # We'll skip this for Keycloak but update MongoDB
+                mongo_update["username"] = value
+            elif field == "status":
+                # Convert status to boolean for Keycloak
+                keycloak_update["enabled"] = value == "active"
+                mongo_update["status"] = value
+            elif field == "role":
+                # Role changes in Keycloak require separate role assignment
+                # We'll handle this separately if needed
+                mongo_update["role"] = value
+            else:
+                # For other fields, just update MongoDB
+                mongo_update[field] = value
+        
+        # Add metadata if provided
+        if "metadata" in update_data:
+            mongo_update["metadata"] = update_data["metadata"]
+        
+        # Add organization_id if provided
+        if "organization_id" in update_data:
+            mongo_update["organization_id"] = update_data["organization_id"]
+        
+        # Add updated timestamp
+        mongo_update["updated_at"] = datetime.utcnow().isoformat()
+        
+        try:
+            print(f"DEBUG: Preparing to update user {user_id}")
+            print(f"DEBUG: Keycloak update data: {keycloak_update}")
+            print(f"DEBUG: MongoDB update data: {mongo_update}")
+            
+            # Update in Keycloak first
+            if keycloak_update:
+                await self.keycloak.update_keycloak_user(user_id, keycloak_update)
+                print(f"DEBUG: Successfully updated Keycloak user {user_id}")
+            
+            # Update in MongoDB
+            if mongo_update:
+                result = await self.db.users.update_one(
+                    {"user_id": user_id},
+                    {"$set": mongo_update}
+                )
+                print(f"DEBUG: MongoDB update result: {result.modified_count} documents modified")
+                
+                if result.modified_count == 0:
+                    print(f"WARNING: No MongoDB document was updated for user {user_id}")
+            
+            # If role was changed, update hierarchy
+            if "role" in update_data:
+                await self._update_user_hierarchy(user_id)
+                print(f"DEBUG: Updated hierarchy for user {user_id} after role change")
+            
+            return True
+            
+        except Exception as e:
+            print(f"ERROR: Failed to update user {user_id}: {str(e)}")
+            raise e
 
     async def delete_user(self, manager_id: str, target_user_id: str) -> bool:
         """Delete a user from Keycloak and MongoDB with hierarchy validation and cleanup."""

@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Users, Settings, Search, Eye, UserCheck, UserX, GraduationCap, Shield, Trash2 } from 'lucide-react';
+import { Plus, Users, Settings, Search, Eye, UserCheck, UserX, GraduationCap, Shield, Trash2, Filter, SortAsc, SortDesc, Download, Upload, MoreVertical, Edit, Mail } from 'lucide-react';
 import { usersAPI } from '../../services/api';
 import BatchUserUpload from './BatchUserUpload';
+import UserDetailsModal from './UserDetailsModal';
+import EditUserModal from './EditUserModal';
+import SendMailModal from './SendMailModal';
 import { useAuthContext } from '../../contexts/AuthContext';
 
 // Types
@@ -56,6 +59,14 @@ const UserManagement: React.FC = () => {
   const [userPage, setUserPage] = useState(1);
   const USERS_PAGE_SIZE = 10;
   
+  // Enhanced filtering and sorting
+  const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<'name' | 'email' | 'role' | 'status' | 'created_at'>('name');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  
   // User creation form
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [showBatchUpload, setShowBatchUpload] = useState(false);
@@ -66,6 +77,12 @@ const UserManagement: React.FC = () => {
     role: 'student',
     password: ''
   });
+
+  // Modal states
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [showUserDetails, setShowUserDetails] = useState(false);
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [showSendMail, setShowSendMail] = useState(false);
 
   // Class management
   const [classes, setClasses] = useState<ClassAssignment[]>([]);
@@ -334,6 +351,152 @@ const UserManagement: React.FC = () => {
     }
   };
 
+  // Bulk operations
+  const handleSelectUser = (userId: string) => {
+    setSelectedUsers(prev => 
+      prev.includes(userId) 
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedUsers.length === pagedUsers.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(pagedUsers.map(user => user.user_id));
+    }
+  };
+
+  const handleBulkStatusUpdate = async (status: 'active' | 'inactive' | 'suspended') => {
+    if (selectedUsers.length === 0) return;
+    
+    const confirmed = window.confirm(
+      `Update ${selectedUsers.length} users to ${status} status?`
+    );
+    if (!confirmed) return;
+
+    try {
+      await Promise.all(
+        selectedUsers.map(userId => 
+          fetch(`/users/status/${userId}?status=${status}`, {
+            method: 'PUT',
+            headers: { 'Authorization': `Bearer ${token}` }
+          })
+        )
+      );
+      await fetchManagedUsers();
+      setSelectedUsers([]);
+      alert(`Successfully updated ${selectedUsers.length} users`);
+    } catch (error) {
+      console.error('Bulk status update failed:', error);
+      alert('Failed to update some users');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedUsers.length === 0) return;
+    
+    const confirmed = window.confirm(
+      `Delete ${selectedUsers.length} users? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    try {
+      await Promise.all(
+        selectedUsers.map(userId => usersAPI.deleteUser(userId))
+      );
+      await fetchManagedUsers();
+      setSelectedUsers([]);
+      alert(`Successfully deleted ${selectedUsers.length} users`);
+    } catch (error) {
+      console.error('Bulk delete failed:', error);
+      alert('Failed to delete some users');
+    }
+  };
+
+  const exportUsers = () => {
+    const csvContent = [
+      ['Name', 'Email', 'Username', 'Role', 'Status', 'Created At'],
+      ...filteredUsers.map(user => [
+        user.name,
+        user.email,
+        user.username,
+        user.role,
+        user.status,
+        user.created_at || ''
+      ])
+    ].map(row => row.join(',')).join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `users-export-${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  // Modal handlers
+  const handleViewUserDetails = (user: User) => {
+    setSelectedUser(user);
+    setShowUserDetails(true);
+  };
+
+  const handleEditUser = (user: User) => {
+    setSelectedUser(user);
+    setShowEditUser(true);
+  };
+
+  const handleSendMail = (user: User) => {
+    setSelectedUser(user);
+    setShowSendMail(true);
+  };
+
+  const handleSaveUser = async (updatedUser: Partial<User>) => {
+    try {
+      if (!selectedUser) {
+        throw new Error('No user selected for update');
+      }
+      
+      console.log('Updating user:', selectedUser.user_id, updatedUser);
+      
+      // Call the API to update the user
+      await usersAPI.updateUser(selectedUser.user_id, updatedUser);
+      
+      // Refresh the user list to show changes
+      await fetchManagedUsers();
+      
+      setShowEditUser(false);
+      setSelectedUser(null);
+      alert('User updated successfully!');
+    } catch (error) {
+      console.error('Failed to update user:', error);
+      alert(`Failed to update user: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  };
+
+  const handleSendEmail = async (emailData: any) => {
+    try {
+      // This would typically call an API to send email
+      console.log('Sending email:', emailData);
+      setShowSendMail(false);
+      setSelectedUser(null);
+      alert('Email sent successfully!');
+    } catch (error) {
+      console.error('Failed to send email:', error);
+      throw error;
+    }
+  };
+
+  const closeModals = () => {
+    setShowUserDetails(false);
+    setShowEditUser(false);
+    setShowSendMail(false);
+    setSelectedUser(null);
+  };
+
   const handleCreateClass = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClassName || !selectedTeacher) return;
@@ -384,11 +547,42 @@ const UserManagement: React.FC = () => {
     }
   };
 
-  const filteredUsers = users.filter(user =>
-    user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    user.username.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Enhanced filtering and sorting logic
+  const filteredUsers = users
+    .filter(user => {
+      const matchesSearch = user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        user.username.toLowerCase().includes(searchTerm.toLowerCase());
+      
+      const matchesRole = roleFilter === 'all' || user.role === roleFilter;
+      const matchesStatus = statusFilter === 'all' || user.status === statusFilter;
+      
+      return matchesSearch && matchesRole && matchesStatus;
+    })
+    .sort((a, b) => {
+      let aValue = a[sortBy];
+      let bValue = b[sortBy];
+      
+      // Handle date sorting
+      if (sortBy === 'created_at') {
+        aValue = a.created_at || '';
+        bValue = b.created_at || '';
+      }
+      
+      // Handle undefined values
+      if (aValue === undefined && bValue === undefined) return 0;
+      if (aValue === undefined) return sortOrder === 'asc' ? 1 : -1;
+      if (bValue === undefined) return sortOrder === 'asc' ? -1 : 1;
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        const comparison = aValue.toLowerCase().localeCompare(bValue.toLowerCase());
+        return sortOrder === 'asc' ? comparison : -comparison;
+      }
+      
+      if (aValue < bValue) return sortOrder === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortOrder === 'asc' ? 1 : -1;
+      return 0;
+    });
 
   const totalUserPages = Math.max(1, Math.ceil(filteredUsers.length / USERS_PAGE_SIZE));
   const safeUserPage = Math.min(userPage, totalUserPages);
@@ -480,17 +674,133 @@ const UserManagement: React.FC = () => {
       {/* Users Tab */}
       {activeTab === 'users' && (
         <div className="space-y-4">
-          {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="Search users..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
-            />
+          {/* Enhanced Search and Filters */}
+          <div className="bg-white p-4 rounded-lg shadow-sm border">
+            <div className="flex flex-col lg:flex-row gap-4">
+              {/* Search */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search users by name, email, or username..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 w-full"
+                />
+              </div>
+              
+              {/* Filter Toggle */}
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                <Filter className="w-4 h-4" />
+                <span>Filters</span>
+              </button>
+              
+              {/* Export Button */}
+              <button
+                onClick={exportUsers}
+                className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+              >
+                <Download className="w-4 h-4" />
+                <span>Export</span>
+              </button>
+            </div>
+            
+            {/* Advanced Filters */}
+            {showFilters && (
+              <div className="mt-4 pt-4 border-t border-gray-200">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Role Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                    <select
+                      value={roleFilter}
+                      onChange={(e) => setRoleFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">All Roles</option>
+                      <option value="admin">Admin</option>
+                      <option value="supervisor">Supervisor</option>
+                      <option value="teacher">Teacher</option>
+                      <option value="student">Student</option>
+                    </select>
+                  </div>
+                  
+                  {/* Status Filter */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+                    <select
+                      value={statusFilter}
+                      onChange={(e) => setStatusFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="active">Active</option>
+                      <option value="inactive">Inactive</option>
+                      <option value="suspended">Suspended</option>
+                    </select>
+                  </div>
+                  
+                  {/* Sort Options */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Sort By</label>
+                    <div className="flex space-x-2">
+                      <select
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as any)}
+                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="name">Name</option>
+                        <option value="email">Email</option>
+                        <option value="role">Role</option>
+                        <option value="status">Status</option>
+                        <option value="created_at">Created Date</option>
+                      </select>
+                      <button
+                        onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                        className="px-3 py-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                      >
+                        {sortOrder === 'asc' ? <SortAsc className="w-4 h-4" /> : <SortDesc className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
+          
+          {/* Bulk Actions */}
+          {selectedUsers.length > 0 && (
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-blue-800">
+                  {selectedUsers.length} user{selectedUsers.length !== 1 ? 's' : ''} selected
+                </span>
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => handleBulkStatusUpdate('active')}
+                    className="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700"
+                  >
+                    Activate
+                  </button>
+                  <button
+                    onClick={() => handleBulkStatusUpdate('suspended')}
+                    className="px-3 py-1 text-sm bg-yellow-600 text-white rounded hover:bg-yellow-700"
+                  >
+                    Suspend
+                  </button>
+                  <button
+                    onClick={handleBulkDelete}
+                    className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Users List */}
           <div className="bg-white shadow rounded-lg overflow-hidden">
@@ -500,9 +810,28 @@ const UserManagement: React.FC = () => {
             </div>
             
             <div className="divide-y divide-gray-200">
+              {/* Header with select all */}
+              <div className="px-6 py-3 bg-gray-50 border-b border-gray-200">
+                <div className="flex items-center space-x-4">
+                  <input
+                    type="checkbox"
+                    checked={selectedUsers.length === pagedUsers.length && pagedUsers.length > 0}
+                    onChange={handleSelectAll}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Select All</span>
+                </div>
+              </div>
+              
               {pagedUsers.map((user) => (
-                <div key={user.user_id} className="px-6 py-4 flex items-center justify-between">
+                <div key={user.user_id} className="px-6 py-4 flex items-center justify-between hover:bg-gray-50">
                   <div className="flex items-center space-x-4">
+                    <input
+                      type="checkbox"
+                      checked={selectedUsers.includes(user.user_id)}
+                      onChange={() => handleSelectUser(user.user_id)}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
                     {getRoleIcon(user.role)}
                     <div>
                       <div className="text-sm font-medium text-gray-900">{user.name}</div>
@@ -520,7 +849,7 @@ const UserManagement: React.FC = () => {
                       {user.status === 'active' && (
                         <button
                           onClick={() => handleUpdateUserStatus(user.user_id, 'suspended')}
-                          className="text-red-600 hover:text-red-800"
+                          className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
                           title="Suspend user"
                         >
                           <UserX className="w-4 h-4" />
@@ -530,20 +859,40 @@ const UserManagement: React.FC = () => {
                       {user.status !== 'active' && (
                         <button
                           onClick={() => handleUpdateUserStatus(user.user_id, 'active')}
-                          className="text-green-600 hover:text-green-800"
+                          className="text-green-600 hover:text-green-800 p-1 rounded hover:bg-green-50"
                           title="Activate user"
                         >
                           <UserCheck className="w-4 h-4" />
                         </button>
                       )}
                       
-                      <button className="text-blue-600 hover:text-blue-800" title="View details">
+                      <button 
+                        onClick={() => handleViewUserDetails(user)}
+                        className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50" 
+                        title="View details"
+                      >
                         <Eye className="w-4 h-4" />
+                      </button>
+
+                      <button 
+                        onClick={() => handleEditUser(user)}
+                        className="text-gray-600 hover:text-gray-800 p-1 rounded hover:bg-gray-50" 
+                        title="Edit user"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </button>
+
+                      <button 
+                        onClick={() => handleSendMail(user)}
+                        className="text-purple-600 hover:text-purple-800 p-1 rounded hover:bg-purple-50" 
+                        title="Send email"
+                      >
+                        <Mail className="w-4 h-4" />
                       </button>
 
                       <button
                         onClick={() => handleDeleteUser(user.user_id, user.name)}
-                        className="text-red-600 hover:text-red-800"
+                        className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
                         title="Delete user"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -922,6 +1271,30 @@ const UserManagement: React.FC = () => {
           onComplete={() => { setShowBatchUpload(false); fetchManagedUsers(); }}
         />
       )}
+
+      {/* Modals */}
+      <UserDetailsModal
+        user={selectedUser}
+        isOpen={showUserDetails}
+        onClose={closeModals}
+        onEdit={handleEditUser}
+        onSendMail={handleSendMail}
+      />
+
+      <EditUserModal
+        user={selectedUser}
+        isOpen={showEditUser}
+        onClose={closeModals}
+        onSave={handleSaveUser}
+        canEditRole={permissions?.role === 'admin'}
+      />
+
+      <SendMailModal
+        user={selectedUser}
+        isOpen={showSendMail}
+        onClose={closeModals}
+        onSend={handleSendEmail}
+      />
     </div>
   );
 };

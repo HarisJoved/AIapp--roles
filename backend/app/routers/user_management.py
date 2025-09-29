@@ -161,6 +161,27 @@ async def update_user_status(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
+@router.put("/{user_id}", response_model=Dict[str, Any])
+async def update_user(
+    user_id: str,
+    update_data: Dict[str, Any],
+    current_user: User = Depends(get_current_user)
+):
+    """Update user information in both Keycloak and MongoDB"""
+    try:
+        user_service = get_user_management_service()
+        success = await user_service.update_user(current_user.user_id, user_id, update_data)
+        if not success:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found or could not be updated")
+        return {"message": "User updated successfully"}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
+
+
 @router.delete("/{user_id}")
 async def delete_user(
     user_id: str,
